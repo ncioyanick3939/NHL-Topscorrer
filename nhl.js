@@ -1,5 +1,4 @@
 import { autoFillAll } from './lineup.js';
-import dns from 'node:dns';
 import { db, tx, getMeta, setMeta } from './db.js';
 import { NHL_API, NHL_TEAMS, PRICE, RULES, SCORING } from './config.js';
 import { statsToPoints, nextPrice, summarize, seasonPoints, resultPoints } from './scoring.js';
@@ -18,16 +17,28 @@ const HEADERS = {
   Accept: 'application/json',
 };
 
-export async function fetchJson(path) {
-  let res;
-  try {
-    res = await fetch(`${NHL_API}${path}`, { headers: HEADERS, redirect: 'follow', signal: AbortSignal.timeout(30_000) });
-  } catch (e) {
-    const why = e.cause?.code || e.cause?.message || e.message;
-    throw new Error(`NHL API ${path}: ${why}`);
+/** NHL API call. Codespaces often time out on IPv6, so IPv4 goes first; failed calls are retried 3 times. */
+export async function fetchJson(path, attempts = 3, timeoutMs = 15_000) {
+  let lastErr;
+  for (let k = 1; k <= attempts; k++) {
+    let res;
+    try {
+      res = await fetch(`${NHL_API}${path}`, { headers: HEADERS, redirect: 'follow', signal: AbortSignal.timeout(timeoutMs) });
+    } catch (e) {
+      const why = e.cause?.code || e.cause?.message || e.message;
+      lastErr = new Error(`NHL API ${path}: ${why}`);
+      if (k < attempts) await new Promise((r) => setTimeout(r, 1000 * k));
+      continue;
+    }
+    if (res.status >= 500 || res.status === 429) {
+      lastErr = new Error(`NHL API ${path}: HTTP ${res.status}`);
+      if (k < attempts) { await new Promise((r) => setTimeout(r, 1000 * k)); continue; }
+      throw lastErr;
+    }
+    if (!res.ok) throw new Error(`NHL API ${path}: HTTP ${res.status}`);
+    return res.json();
   }
-  if (!res.ok) throw new Error(`NHL API ${path}: HTTP ${res.status}`);
-  return res.json();
+  throw lastErr;
 }
 
 /* ---------- Parsers (pure, tested with fixtures) ---------- */
@@ -325,7 +336,7 @@ const seasonCache = new Map();
 async function seasonResults(team) {
   const hit = seasonCache.get(team);
   if (hit && Date.now() - hit.t < 30 * 60_000) return hit.data;
-  const data = parseSeasonResults(await fetchJson(`/club-schedule-season/${team}/now`));
+  const data = parseSeasonResults(await fetchJson(`/club-schedule-season/${team}/now`, 2, 8000));
   seasonCache.set(team, { t: Date.now(), data });
   return data;
 }
@@ -337,8 +348,7 @@ export async function getGameLog(playerId) {
   if (hit && Date.now() - hit.t < 30 * 60_000) return hit.data;
   try {
     const pos = db.prepare('SELECT pos FROM players WHERE id = ?').get(playerId)?.pos ?? 'F';
-    let raw;
-    try { raw = await fetchJson(`/player/${playerId}/game-log/now`); } catch { raw = await fetchJson(`/player/${playerId}/game-log/now`); } // one retry
+    const raw = await fetchJson(`/player/${playerId}/game-log/now`, 2, 8000); // a player sheet must not wait long
     const data = parseGameLog(raw, 100, pos);
     const byTeam = new Map();
     for (const team of new Set(data.map((g) => g.team).filter(Boolean))) {
