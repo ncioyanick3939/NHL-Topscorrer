@@ -268,7 +268,7 @@ const views = {
   },
 
   async live() {
-    const [d, t] = await Promise.all([api('/api/live'), api('/api/team')]);
+    const [d, t, lg] = await Promise.all([api('/api/live'), api('/api/team'), api('/api/league')]);
     const running = d.games.some((g) => g.state === 'LIVE' || g.state === 'CRIT');
     const playingTeams = new Set(d.games.filter((g) => g.day === d.openDay).flatMap((g) => [g.home, g.away]));
     const pts = new Map(d.mine.map((r) => [r.id, r]));
@@ -276,7 +276,10 @@ const views = {
     const off = t.players.filter((p) => !playingTeams.has(p.team));
     const shown = S.sub.live === 'off' ? off : playing;
     const row = (p) => { const r = pts.get(p.id); return prow(p, { sub: p.dressed ? `<b>${r ? r.goals : 0}</b><small>Tore</small><b>${r ? r.assists : 0}</b><small>Assists</small>` : '<small>noch kein Einsatz</small>', right: `<b class="${r && r.pts > 0 ? 'up' : ''}">${r ? (r.pts > 0 ? '+' : '') + r.pts : 0}</b><small>Live</small>` }); };
+    const board = [...lg].sort((x, y) => y.live - x.live || y.points - x.points);
+    const standings = `<h2>Manager heute <small>Punkte aus der Aufstellung</small></h2>${board.map((r, i) => `<div class="rank${r.me ? ' me' : ''}"><div class="n">${i + 1}.</div><div class="grow"><div class="rname">${esc(r.name)}${r.me ? ' (du)' : ''}</div></div><div class="rv">${fmt(r.points - r.live)} total</div><div class="rp ${r.live > 0 ? 'up' : ''}">${r.live > 0 ? '+' : ''}${r.live}<small>heute</small></div></div>`).join('')}<h2>Deine Spieler</h2>`;
     return `${running ? '<div class="livebar"><i></i>Spiele laufen · deine Punkte heute: <b>' + d.myPoints + '</b></div>' : countdown(d.nextStart)}
+      ${standings}
       ${shown.length ? shown.map(row).join('') : `<div class="empty">${S.sub.live === 'off' ? 'Alle deine Spieler haben heute ein Spiel.' : 'Heute spielt keiner deiner Spieler.'}</div>`}
       <div class="floatseg">${seg('lsub', S.sub.live, [['play', 'Im Spiel (' + playing.length + ')'], ['off', 'Spielfrei (' + off.length + ')']])}</div>
       <div class="note">Die Punkte laufen live. Der Preis ändert sich einmal am nächsten Morgen, wenn alle Spiele des Tages fertig sind.</div>`;
