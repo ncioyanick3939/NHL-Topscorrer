@@ -83,6 +83,11 @@ const toiSeconds = (toi) => {
 };
 
 /** gamecenter/{id}/boxscore -> per-player stats of that game so far. */
+/** gamecenter/{id}/play-by-play -> ids of the players in the lineup (rosterSpots). Empty until the lineup is published. */
+export function parseRosterSpots(json) {
+  return (json.rosterSpots ?? []).map((r) => r.playerId).filter((id) => Number.isInteger(id));
+}
+
 export function parseBoxscore(json) {
   const players = [];
   const sides = [['homeTeam', json.homeTeam?.abbrev], ['awayTeam', json.awayTeam?.abbrev]];
@@ -266,7 +271,9 @@ const upsertGame = db.prepare(`
 export async function syncSchedule() {
   const games = parseSchedule(await fetchJson('/schedule/now'));
   // Also look 1 and 2 weeks ahead so the next games (for example after a break) show up early. Optional: errors are ignored.
-  for (const days of [7, 14]) {
+  const extrasDue = Date.now() - Number(getMeta('last_schedule_extra') || 0) > 3_600_000;
+  if (extrasDue) setMeta('last_schedule_extra', Date.now());
+  for (const days of extrasDue ? [7, 14] : []) {
     try {
       const d = new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
       games.push(...parseSchedule(await fetchJson(`/schedule/${d}`)));
@@ -306,6 +313,24 @@ export function applyBoxscore(game, box) {
 }
 
 /** Poll boxscores of running games, and of finished games once after they ended. */
+/** Games that start within 90 minutes: read the published lineup (if the NHL has it yet). Never fails the update. */
+export async function pollLineups({ log = console.log } = {}) {
+  const soon = db.prepare(`SELECT id FROM games WHERE state IN ('FUT','PRE') AND start_utc IS NOT NULL
+    AND (julianday(start_utc) - julianday('now')) * 1440 BETWEEN -5 AND 90`).all();
+  for (const g of soon) {
+    try {
+      const ids = parseRosterSpots(await fetchJson(`/gamecenter/${g.id}/play-by-play`));
+      if (!ids.length) continue; // not published yet
+      tx(() => {
+        db.prepare('DELETE FROM game_lineup WHERE game_id = ?').run(g.id);
+        for (const id of ids) db.prepare('INSERT OR IGNORE INTO game_lineup (game_id, player_id) VALUES (?,?)').run(g.id, id);
+      });
+    } catch (e) {
+      log(`Line-Up ${g.id} nicht geladen: ${e.cause?.code || e.message}`);
+    }
+  }
+}
+
 export async function pollGames({ log = console.log } = {}) {
   const open = db.prepare(`SELECT * FROM games WHERE state IN ('LIVE','CRIT','FINAL','OFF') AND day NOT IN (SELECT day FROM days)`).all();
   for (const g of open) {
@@ -368,6 +393,7 @@ export async function tick({ log = console.log } = {}) {
     if (nPlayers === 0 || Date.now() - last > 7 * 24 * 3600 * 1000) await syncRosters({ log });
     await syncSchedule();
     await pollGames({ log });
+    await pollLineups({ log });
     if (injurySyncDue(RULES.injurySyncMs)) {
       try { await syncInjuries({ log }); } catch (e) { log(`Verletzungen nicht geladen: ${e.cause?.code || e.message}`); setMeta('last_injury_sync', Date.now() - RULES.injurySyncMs + 10 * 60_000); }
     }
@@ -380,7 +406,7 @@ export async function tick({ log = console.log } = {}) {
   }
   const running = db.prepare(`SELECT COUNT(*) AS n FROM games WHERE state IN ('LIVE','CRIT')`).get().n;
   const soon = db.prepare(`SELECT COUNT(*) AS n FROM games WHERE state IN ('FUT','PRE') AND start_utc IS NOT NULL
-                           AND (julianday(start_utc) - julianday('now')) * 1440 < 15`).get().n;
+                           AND (julianday(start_utc) - julianday('now')) * 1440 < 90`).get().n;
   return running || soon ? RULES.liveIntervalMs : RULES.idleIntervalMs;
 }
 

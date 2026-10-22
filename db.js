@@ -127,6 +127,13 @@ CREATE TABLE IF NOT EXISTS transfers (
 );
 CREATE INDEX IF NOT EXISTS transfers_at ON transfers(at);
 
+-- Who is in the official NHL lineup of a game (published about an hour before the start).
+CREATE TABLE IF NOT EXISTS game_lineup (
+  game_id INTEGER NOT NULL,
+  player_id INTEGER NOT NULL,
+  PRIMARY KEY (game_id, player_id)
+);
+
 -- Sealed bids. Nobody sees other people's bids; only the seller of a user listing sees the offers for his player.
 CREATE TABLE IF NOT EXISTS bids (
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,

@@ -85,8 +85,9 @@ const ago = (iso) => {
 /** Im Spiel = he is on the ice in the running game (the NHL publishes no lineup before puck drop). Before: when the team plays. */
 function gameBadge(p) {
   const g = p.nextGame;
+  if (p.nhlLineup === 'out' && !p.dressed) return '<span class="lock bad">Nicht im Line-Up</span>';
   if (p.dressed) return g ? '<span class="lock lineup">Im Spiel</span>' : '<span class="lock">Gespielt</span>';
-  if (g && (g.state === 'FUT' || g.state === 'PRE')) {
+  if (g && (g.state === 'FUT' || g.state === 'PRE') && p.nhlLineup !== 'in') {
     const t = new Date(g.start).toLocaleString('de-CH', { weekday: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Zurich' });
     return `<span class="lock">Spielt ${t}</span>`;
   }
@@ -105,11 +106,12 @@ function injuryBadge(p) {
 /** One player row in the Topscorers style: photo, position, name, points, value. */
 function prow(p, o = {}) {
   const tag = (p.number != null ? '#' + p.number + ' ' : '') + POS[p.pos];
-  const badges = [p.lineup > 0 ? '<span class="lock lineup">Line-Up</span>' : '', gameBadge(p), injuryBadge(p), p.locked ? '<span class="lock">Gesperrt</span>' : '', p.owned && o.owned ? '<span class="lock own">Im Kader</span>' : '', p.myBid ? `<span class="lock own">Dein Gebot ${fmt(p.myBid)}</span>` : '', p.listedBy ? `<span class="lock">Angebot von ${esc(p.listedBy)}</span>` : ''].filter(Boolean).join(' ');
+  const nhl = p.nhlLineup === 'in' ? ' <span class="nhlin">Line-Up</span>' : '';
+  const badges = [p.lineup > 0 ? '<span class="lock lineup">In Aufstellung</span>' : '', gameBadge(p), injuryBadge(p), p.locked ? '<span class="lock">Gesperrt</span>' : '', p.owned && o.owned ? '<span class="lock own">Im Kader</span>' : '', p.myBid ? `<span class="lock own">Dein Gebot ${fmt(p.myBid)}</span>` : '', p.listedBy ? `<span class="lock">Angebot von ${esc(p.listedBy)}</span>` : ''].filter(Boolean).join(' ');
   const right = o.right ?? `<b>${fmt(p.price)}</b><small>${o.rightLabel || 'Marktwert'}</small>`;
   const sub = o.sub ?? `<b>${fmt(p.points)}</b><small>Punkte</small><b>${avg(p)}</b><small>Ø Punkte</small>`;
   return `<div class="prow${o.btn ? ' hasbtn' : ''}" data-open="${p.id}" tabindex="0" role="button" aria-label="${esc(p.first + ' ' + p.last)}">
-    ${avatar(p)}<div class="pmain"><div class="ptag">${esc(tag)}${o.timer && p.onMarket ? ` <span class="timer">noch ${hoursText(p.hoursLeft)}</span>` : ''}</div>
+    ${avatar(p)}<div class="pmain"><div class="ptag">${esc(tag)}${nhl}${o.timer && p.onMarket ? ` <span class="timer">noch ${hoursText(p.hoursLeft)}</span>` : ''}</div>
       <div class="pn">${esc(p.last)}${p.first ? `<small>${esc(p.first)}</small>` : ''}</div>
       <div class="pnums">${sub}</div>${badges ? `<div class="pbadges">${badges}</div>` : ''}</div>
     <div class="pright">${logo(p.team)}<div class="pval">${right}</div>${o.btn || ''}</div></div>`;

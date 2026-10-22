@@ -212,3 +212,4 @@ nav.bar button{font-size:10px;padding:9px 0}nav.bar svg{width:20px;height:20px}
 .tick .ago{position:absolute;right:12px;top:6px}
 .shead{text-align:center}.sheet p{text-align:center}
 .lock.lineup{background:var(--up-bg);color:var(--up)}
+.nhlin{background:var(--yellow);color:var(--navy);border-radius:5px;padding:1px 6px;margin-left:4px;font-weight:800;letter-spacing:.08em}

@@ -124,7 +124,7 @@ function shape(p, owned) {
     missedLast: !!p.missed_last,
     hoursLeft: p.listing_expires ? Math.max(0, Math.ceil((new Date(p.listing_expires) - Date.now()) / 3_600_000)) : null,
     onMarket: !!p.listing_expires && new Date(p.listing_expires) > new Date(),
-    dressed: !!p.dressed, nextGame: nextGame(p.next_game),
+    dressed: !!p.dressed, nhlLineup: p.nhl_lineup_out ? (p.in_nhl_lineup ? 'in' : 'out') : null, nextGame: nextGame(p.next_game),
     listedBy: p.listed_by ?? null, minBid: p.listed_by ? PRICE.minPrice : p.price_floor ?? p.price,
   };
 }
@@ -139,8 +139,13 @@ const MISSED_SQL = `CASE WHEN p.pos != 'G' AND p.games > 0 AND ${LAST_GAME} IS N
   AND EXISTS (SELECT 1 FROM day_stats d WHERE d.game_id = ${LAST_GAME})
   AND NOT EXISTS (SELECT 1 FROM day_stats d WHERE d.game_id = ${LAST_GAME} AND d.player_id = p.id) THEN 1 ELSE 0 END`;
 
+const NEXT_GAME_ID = `(SELECT g.id FROM games g WHERE (g.home = p.team OR g.away = p.team) AND g.day NOT IN (SELECT day FROM days)
+  AND g.state NOT IN ('FINAL','OFF') ORDER BY g.start_utc LIMIT 1)`;
+
 const SELECT_PLAYER = `SELECT p.*, ${LOCKED_SQL} AS locked, ${todayPtsSql} AS today_pts, ${MISSED_SQL} AS missed_last,
   COALESCE((SELECT expires_at FROM market_listings m WHERE m.player_id = p.id), (SELECT expires_at FROM user_listings l WHERE l.player_id = p.id)) AS listing_expires,
+  EXISTS (SELECT 1 FROM game_lineup gl WHERE gl.player_id = p.id AND gl.game_id = ${NEXT_GAME_ID}) AS in_nhl_lineup,
+  EXISTS (SELECT 1 FROM game_lineup gl WHERE gl.game_id = ${NEXT_GAME_ID}) AS nhl_lineup_out,
   (SELECT g.start_utc || '|' || g.state FROM games g WHERE (g.home = p.team OR g.away = p.team) AND g.day NOT IN (SELECT day FROM days)
      AND g.state NOT IN ('FINAL','OFF') ORDER BY g.start_utc LIMIT 1) AS next_game,
   EXISTS (SELECT 1 FROM day_stats d WHERE d.player_id = p.id AND d.day NOT IN (SELECT day FROM days)) AS dressed,

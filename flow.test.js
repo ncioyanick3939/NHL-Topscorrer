@@ -337,3 +337,22 @@ test('auction: highest sealed bid wins at expiry; managers can offer players and
   assert.equal(db.prepare('SELECT balance FROM users WHERE id = ?').get(b).balance, 700000 + 350000);
   assert.equal(game.auctions(a).results[0].won, false);
 });
+
+test('official NHL lineup: rosterSpots are read and shown as "in" / "out" before the game', async () => {
+  const { db } = await import('./db.js');
+  const game = await import('./game.js');
+  const { parseRosterSpots } = await import('./nhl.js');
+  assert.deepEqual(parseRosterSpots({ rosterSpots: [{ playerId: 1 }, { playerId: 2 }, {}] }), [1, 2]);
+  assert.deepEqual(parseRosterSpots({}), []);
+  db.prepare("INSERT OR IGNORE INTO users (name, salt, pw_hash, balance) VALUES ('lnuser','s','x',1)").run();
+  const uid = db.prepare("SELECT id FROM users WHERE name='lnuser'").get().id;
+  for (const [id, last] of [[660001, 'In'], [660002, 'Out']]) db.prepare("INSERT OR IGNORE INTO players (id, team, first, last, pos, price, prev_price) VALUES (?, 'QQQ', 'X', ?, 'F', 100000, 100000)").run(id, last);
+  db.prepare("INSERT OR REPLACE INTO games (id, day, start_utc, state, home, away) VALUES (660100, '2097-05-05', ?, 'FUT', 'QQQ', 'RRR')").run(new Date(Date.now() + 3_600_000).toISOString());
+  const find = (id) => game.topscorers(uid, {}).find((p) => p.id === id) ?? null;
+  db.prepare('UPDATE players SET games = 1, fantasy_pts = 5 WHERE id IN (660001, 660002)').run();
+  assert.equal(find(660001).nhlLineup, null, 'no lineup published yet');
+  db.prepare('INSERT INTO game_lineup (game_id, player_id) VALUES (660100, 660001)').run();
+  assert.equal(find(660001).nhlLineup, 'in');
+  assert.equal(find(660002).nhlLineup, 'out');
+  db.prepare("DELETE FROM games WHERE id = 660100").run();
+});
