@@ -332,3 +332,6 @@ nav.bar svg{width:26px;height:26px}
 .photo .av i{font-size:20px;line-height:26px;min-width:38px;border-radius:10px;right:-12px;bottom:0}
 .big3 b{color:#fff}.big3:first-of-type b{font-size:34px}
 .sheet.center>.wmlogo{position:absolute}
+
+.logo{display:grid;place-items:center;filter:drop-shadow(0 2px 3px rgba(0,0,0,.3))}
+.top{padding-top:calc(6px + env(safe-area-inset-top,0px));padding-bottom:8px}

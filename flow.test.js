@@ -74,7 +74,7 @@ test('live points, trade lock, and next-day price move from real-format data', a
   db.prepare(`INSERT INTO games (id, day, state, home, away, start_utc) VALUES (1,'2026-10-22','LIVE','NJD','EDM', ?)`).run(new Date(Date.now() + 3_600_000).toISOString()); // starts after the manager joined
   nhl.applyBoxscore(g, nhl.parseBoxscore(box('LIVE', 1)));
   const live = game.liveView(uid);
-  assert.equal(live.mine[0].pts, 60 + 3 * 5 + 5 + 5); // goal + 3 shots + plus/minus + lineup
+  assert.equal(live.mine[0].pts, 60 + 3 * 5 + 5 + 5 + 19); // goal + 3 shots + plus/minus + lineup + 19 minutes on ice
   assert.equal(db.prepare('SELECT price FROM players WHERE id=8480002').get().price, 1_000_000);
   assert.throws(() => game.sell(uid, 8480002), /Gesperrt/);
   assert.throws(() => game.buy(uid, 8480010), /Gesperrt/);
@@ -88,8 +88,8 @@ test('live points, trade lock, and next-day price move from real-format data', a
   assert.deepEqual(nhl.finalizeDueDays(new Date('2026-10-23T09:00:00Z')), ['2026-10-22']);
   const p = db.prepare('SELECT price, prev_price FROM players WHERE id=8480002').get();
   assert.equal(p.prev_price, 1_000_000);
-  assert.equal(p.price, nextPrice(1_000_000, 100)); // 85 live + 15 for the win
-  assert.equal(game.myTeam(uid).points, 100 - 15 * 50); // minus 50 for each of the 15 empty line-up positions
+  assert.equal(p.price, nextPrice(1_000_000, 119)); // 104 live + 15 for the win
+  assert.equal(game.myTeam(uid).points, 119 - 15 * 50); // minus 50 for each of the 15 empty line-up positions
   assert.equal(game.sell(uid, 8480002).price, p.price);
 
   // Finalizing twice changes nothing.
@@ -454,4 +454,36 @@ test('points only count for games that started after the manager joined', async 
   db.prepare("INSERT INTO day_stats (day, player_id, game_id, goals, pts) VALUES ('2090-03-03',330001,330100,1,50)").run();
   nhl.finalizeDay('2090-03-03');
   assert.equal(db.prepare('SELECT points FROM users WHERE id=?').get(late).points, 0, 'game started before he joined');
+});
+
+test('play-by-play extras: shorthanded goal, PP/SH assists, winning goal, faceoffs, missed shots, penalties', () => {
+  const play = (typeDescKey, details, extra = {}) => ({ typeDescKey, details, periodDescriptor: { number: 1, periodType: 'REG' }, ...extra });
+  const json = {
+    gameState: 'FINAL', homeTeam: { id: 1, abbrev: 'NJD', score: 2 }, awayTeam: { id: 2, abbrev: 'EDM', score: 1 }, gameOutcome: { lastPeriodType: 'REG' },
+    plays: [
+      play('faceoff', { winningPlayerId: 10, losingPlayerId: 20 }),
+      play('missed-shot', { shootingPlayerId: 10, reason: 'wide-left' }),
+      play('goal', { eventOwnerTeamId: 1, scoringPlayerId: 10, assist1PlayerId: 11 }, { situationCode: '1451' }), // home 5 v away 4: power play
+      play('goal', { eventOwnerTeamId: 2, scoringPlayerId: 20, assist1PlayerId: 21 }, { situationCode: '1451' }), // away shorthanded
+      play('goal', { eventOwnerTeamId: 1, scoringPlayerId: 12 }, { situationCode: '1551' }),                       // 2nd home goal = winner
+      play('penalty', { committedByPlayerId: 10, duration: 2, typeCode: 'MIN', descKey: 'tripping' }),
+      play('penalty', { committedByPlayerId: 20, duration: 5, typeCode: 'MAJ', descKey: 'fighting' }),
+      play('penalty', { duration: 2, typeCode: 'BEN', descKey: 'too-many-men-on-the-ice' }),
+    ],
+  };
+  const { extras, hadPlays } = nhl.parsePlayExtras(json);
+  assert.equal(hadPlays, true);
+  assert.equal(extras.get(20).sh_goals, 1);
+  assert.equal(extras.get(21).sh_assists, 1);
+  assert.equal(extras.get(11).pp_assists, 1);
+  assert.equal(extras.get(12).gwg, 1);
+  assert.equal(extras.get(10).fo_won, 1);
+  assert.equal(extras.get(20).fo_lost, 1);
+  assert.equal(extras.get(10).missed, 1);
+  assert.equal(extras.get(10).pen_pts, -10);
+  assert.equal(extras.get(20).pen_pts, -75);
+  // points: forward with a shorthanded goal, a lost faceoff and a fight
+  assert.equal(statsToPoints({ pos: 'F', goals: 1, sh_goals: 1, fo_lost: 1, pen_pts: -75 }), 60 + 20 - 2 - 75);
+  assert.equal(statsToPoints({ pos: 'F', toi_min: 18, dressed: 1 }), 18 + 5);
+  assert.equal(statsToPoints({ pos: 'G', goalie_time: 6, dressed: 1 }), 6 + 5);
 });

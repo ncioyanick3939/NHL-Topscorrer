@@ -33,7 +33,12 @@ export function statsToPoints(s) {
     (s.shutout ? c.shutout : 0) +
     (s.zero_against && (pos === 'G' || pos === 'D') ? c.zeroAgainst : 0) +
     (s.dressed ? c.lineup : 0) +
-    penaltyPoints(s.pim) +
+    (s.sh_goals || 0) * c.shGoal + (s.sh_assists || 0) * c.shAssist + (s.pp_assists || 0) * c.ppAssist +
+    (s.gwg || 0) * c.gwg + (s.pwg || 0) * c.pwg +
+    (s.fo_won || 0) * c.faceoffWon + (s.fo_lost || 0) * c.faceoffLost +
+    (s.missed || 0) * c.missedShot +
+    (s.toi_min || 0) * c.timeOnIce + (s.goalie_time || 0) * c.goalieTime +
+    (s.pen_pts != null ? s.pen_pts : penaltyPoints(s.pim)) +
     resultPoints(s.result);
   return Math.round(pts);
 }

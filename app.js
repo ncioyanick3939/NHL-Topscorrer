@@ -364,8 +364,9 @@ async function render() {
 }
 
 const STAR = '<svg viewBox="0 0 24 24" class="star" aria-hidden="true"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.6 7-6.2-3.7-6.2 3.7 1.6-7L2 9.2l7.1-.6z"/></svg>';
+const EMBLEM = '<svg viewBox="0 0 64 64" width="54" height="54" aria-hidden="true"><path d="M32 3l8.4 17.6 19.3 2.4-14.2 13.4 3.6 19.1L32 45.8 15 55.5l3.6-19.1L4.3 23l19.3-2.4z" fill="#fff" stroke="#e5384f" stroke-width="2.4" stroke-linejoin="round"/><text x="32" y="37" text-anchor="middle" font-family="Barlow Condensed,Arial Narrow,sans-serif" font-weight="800" font-size="11.5" letter-spacing=".2" fill="#173f96">NHL</text></svg>';
 function header() {
-  return `<header class="top"><div class="top-in"><div class="chip">Saison 26/27</div><div class="logo">${STAR}<b>NHL</b><span>Topscorer</span></div>
+  return `<header class="top"><div class="top-in"><div class="chip">Saison 26/27</div><div class="logo" aria-label="NHL Topscorer">${EMBLEM}</div>
     <button class="gear" data-settings aria-label="Einstellungen"><svg viewBox="0 0 24 24"><path d="M19.4 13a7.6 7.6 0 000-2l2-1.6-2-3.4-2.4 1a7.5 7.5 0 00-1.7-1L15 3.4h-4l-.4 2.6a7.5 7.5 0 00-1.7 1l-2.4-1-2 3.4 2 1.6a7.6 7.6 0 000 2l-2 1.6 2 3.4 2.4-1a7.5 7.5 0 001.7 1l.4 2.6h4l.4-2.6a7.5 7.5 0 001.7-1l2.4 1 2-3.4zM13 15.5a3.5 3.5 0 110-7 3.5 3.5 0 010 7z" transform="translate(-1 0)"/></svg></button></div></header>`;
 }
 
@@ -511,7 +512,7 @@ async function openRules() {
     ${line('Sieg', s.win)}${line('Sieg in Verlängerung/Penaltys', s.winOT)}${line('Niederlage n.V.', s.lossOT)}${line('Niederlage Penaltyschiessen', s.lossSO)}${line('Niederlage', s.loss)}
     ${line('Zero Against (Torhüter, Verteidiger)', s.zeroAgainst)}${line('Geblockter Schuss', s.blocked)}${line('Schuss aufs Tor', s.shot)}${line('Im Spiel dabei', s.lineup)}${line('Plus/Minus (pro Punkt)', s.plusMinus)}
     ${line('Parade', s.save)}${line('Gegentor', s.goalAgainst)}${line('Strafe 2 Min.', s.penalty2)}${line('Strafe 5 Min.', s.penalty5)}${line('Strafe 10 Min.', s.penalty10)}${line('Leere Aufstellungsposition', s.emptySlot)}</ul>
-    <p class="note">Noch nicht eingebaut, weil die NHL-Daten es nicht hergeben: Unterzahl-Tor, Siegtor, Bullys, Fehlschüsse und Pfosten, Strafschuss-Aktionen, Zeit auf dem Eis.</p>
+    <p class="note">Zusätzlich zählen: Unterzahl-Tor ${s.shGoal}, Unterzahl-Assist ${s.shAssist}, Powerplay-Assist ${s.ppAssist}, Siegtor ${s.gwg}, Siegtor im Penaltyschiessen ${s.pwg}, Bully gewonnen ${s.faceoffWon}, Bully verloren ${s.faceoffLost}, Fehlschuss oder Pfosten ${s.missedShot}, Foul mit Penaltyschuss ${s.psFoul}, Matchstrafe ${s.penaltyMatch}, pro Minute Eiszeit +${s.timeOnIce}, Torhüter-Zeitbonus +${s.goalieTime} pro 10 Minuten. Noch nicht eingebaut: Tore und Gegentore der Mannschaft, solange der Spieler auf dem Eis steht, und Penaltyschuss-Tore.</p>
     <h3>Preisänderung</h3><p>Nach dem Ende aller Spiele eines Tages (am nächsten Morgen ab ${u.rolloverHourZurich}:00 Uhr Zürcher Zeit) ändert sich der Preis um ${p.pctPerPoint} % pro Punkt, höchstens ${p.capPct} % pro Tag. Ein Tor eines Stürmers (60 Punkte) gibt also ${(60 * p.pctPerPoint).toFixed(1)} %. Der Mindestpreis ist ${fmt(p.minPrice)}.</p>
     <h3>Rangliste</h3><p>Die Rangliste zählt die Punkte deiner Spieler. Der Teamwert ist die Summe der Marktwerte deines Kaders.</p>`);
 }

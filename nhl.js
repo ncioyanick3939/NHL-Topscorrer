@@ -76,6 +76,78 @@ export function parseRoster(json, team) {
   return out;
 }
 
+/**
+ * play-by-play -> extra stats per player that the boxscore does not have: shorthanded goals, power-play and
+ * shorthanded assists, game/shootout winning goal, faceoffs, missed shots and the exact penalties.
+ * Returns Map(playerId -> extras). Defensive: unknown fields are simply ignored.
+ */
+export function parsePlayExtras(json) {
+  const out = new Map();
+  const get = (id) => { if (!out.has(id)) out.set(id, { sh_goals: 0, sh_assists: 0, pp_assists: 0, gwg: 0, pwg: 0, fo_won: 0, fo_lost: 0, missed: 0, pen_pts: 0 }); return out.get(id); };
+  const homeId = json.homeTeam?.id;
+  const plays = json.plays ?? [];
+  const goalsByTeam = new Map(); // regulation + overtime goals, for the game winning goal
+  const soGoals = new Map();
+  const final = isFinal(json.gameState);
+  const hs = json.homeTeam?.score, as = json.awayTeam?.score;
+  const winnerId = final && hs != null && as != null && hs !== as ? (hs > as ? json.homeTeam?.id : json.awayTeam?.id) : null;
+  const loserScore = winnerId == null ? null : (winnerId === json.homeTeam?.id ? as : hs);
+  const lastType = json.gameOutcome?.lastPeriodType ?? json.periodDescriptor?.periodType ?? 'REG';
+  const soWinnerGoals = []; // [teamId, scorerId] in order
+  for (const p of plays) {
+    const d = p.details ?? {};
+    const kind = p.typeDescKey;
+    const so = p.periodDescriptor?.periodType === 'SO';
+    if (kind === 'goal') {
+      const team = d.eventOwnerTeamId;
+      if (so) { soWinnerGoals.push([team, d.scoringPlayerId]); soGoals.set(team, (soGoals.get(team) ?? 0) + 1); continue; }
+      const n = (goalsByTeam.get(team) ?? 0) + 1;
+      goalsByTeam.set(team, n);
+      const sit = String(p.situationCode ?? '');
+      let strength = 0;
+      if (/^\d{4}$/.test(sit)) {
+        const own = Number(team === homeId ? sit[2] : sit[1]);
+        const opp = Number(team === homeId ? sit[1] : sit[2]);
+        strength = own > opp ? 1 : own < opp ? -1 : 0;
+      }
+      const assists = [d.assist1PlayerId, d.assist2PlayerId].filter(Boolean);
+      if (strength < 0 && d.scoringPlayerId) get(d.scoringPlayerId).sh_goals++;
+      for (const a of assists) { if (strength > 0) get(a).pp_assists++; else if (strength < 0) get(a).sh_assists++; }
+      if (winnerId != null && team === winnerId && n === loserScore + 1 && lastType !== 'SO' && d.scoringPlayerId) get(d.scoringPlayerId).gwg++;
+    } else if (kind === 'faceoff') {
+      if (d.winningPlayerId) get(d.winningPlayerId).fo_won++;
+      if (d.losingPlayerId) get(d.losingPlayerId).fo_lost++;
+    } else if (kind === 'missed-shot' && !so) {
+      if (d.shootingPlayerId) get(d.shootingPlayerId).missed++;
+    } else if (kind === 'penalty') {
+      const who = d.committedByPlayerId;
+      if (!who) continue; // bench penalty: served by a teammate, no player is charged
+      const desc = String(d.descKey ?? '');
+      const type = String(d.typeCode ?? '');
+      const dur = Number(d.duration ?? 0);
+      let pts;
+      if (type === 'MAT' || desc.includes('match-penalty')) pts = SCORING.penaltyMatch;
+      else if (desc.startsWith('ps-')) pts = SCORING.psFoul;
+      else if (type === 'GAME' || type === 'MIS' || dur === 10) pts = SCORING.penalty10;
+      else if (dur === 5) pts = SCORING.penalty5;
+      else if (dur === 4) pts = 2 * SCORING.penalty2;
+      else pts = dur > 0 ? SCORING.penalty2 : 0;
+      get(who).pen_pts += pts;
+    }
+  }
+  // Shootout winning goal: the winner's (n+1)-th shootout goal, n = goals of the loser in the shootout.
+  if (final && lastType === 'SO' && winnerId != null) {
+    const loserSo = [...soGoals.entries()].filter(([t]) => t !== winnerId).reduce((s, [, v]) => s + v, 0);
+    let k = 0;
+    for (const [team, scorer] of soWinnerGoals) {
+      if (team !== winnerId) continue;
+      k++;
+      if (k === loserSo + 1 && scorer) { get(scorer).pwg++; break; }
+    }
+  }
+  return { extras: out, hadPlays: plays.length > 0 };
+}
+
 const toiSeconds = (toi) => {
   if (!toi || typeof toi !== 'string') return 0;
   const [m, s] = toi.split(':').map(Number);
@@ -112,7 +184,7 @@ export function parseBoxscore(json) {
           goals: p.goals ?? 0, assists: p.assists ?? 0, shots: p.sog ?? 0, pp_goals: p.powerPlayGoals ?? 0,
           blocked: p.blockedShots ?? 0, pim: p.pim ?? 0, plus_minus: p.plusMinus ?? 0,
           saves: 0, goals_against: 0, win: result === 'W' || result === 'OTW' ? 1 : 0, shutout: 0,
-          dressed: 1, zero_against: zero ? 1 : 0, result,
+          dressed: 1, zero_against: zero ? 1 : 0, result, toi_min: Math.floor(toiSeconds(p.toi) / 60),
         });
       }
     }
@@ -128,7 +200,7 @@ export function parseBoxscore(json) {
         goals: p.goals ?? 0, assists: p.assists ?? 0, shots: 0, pp_goals: 0, blocked: 0, pim: p.pim ?? 0, plus_minus: 0,
         saves: saves ?? 0, goals_against: ga,
         win: p.decision === 'W' ? 1 : 0, shutout,
-        dressed: 1, zero_against: zero && ga === 0 ? 1 : 0, result,
+        dressed: 1, zero_against: zero && ga === 0 ? 1 : 0, result, goalie_time: Math.floor(secs / 600),
       });
     }
   }
@@ -436,12 +508,23 @@ export async function pollLineups({ log = console.log } = {}) {
   }
 }
 
+/** Put the play-by-play extras onto the boxscore players, then recompute their points. */
+export function mergeExtras(box, { extras, hadPlays }) {
+  if (!hadPlays) return box;
+  for (const p of box.players) {
+    const x = extras.get(p.id);
+    Object.assign(p, x ?? { pen_pts: 0 });
+  }
+  return box;
+}
+
 export async function pollGames({ log = console.log } = {}) {
   const open = db.prepare(`SELECT * FROM games WHERE state IN ('LIVE','CRIT','FINAL','OFF') AND day NOT IN (SELECT day FROM days)`).all();
   for (const g of open) {
     if (isFinal(g.state) && getMeta(`boxfinal:${g.id}`)) continue;
     try {
       const box = parseBoxscore(await fetchJson(`/gamecenter/${g.id}/boxscore`));
+      try { mergeExtras(box, parsePlayExtras(await fetchJson(`/gamecenter/${g.id}/play-by-play`))); } catch (e) { log(`Play-by-play ${g.id} nicht geladen: ${e.message}`); }
       applyBoxscore(g, box);
       if (isFinal(box.state)) setMeta(`boxfinal:${g.id}`, 1);
     } catch (e) {

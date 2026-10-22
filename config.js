@@ -19,6 +19,15 @@ export const SCORING = {
   plusMinus: 5,           // per +1 / -1
   save: 4,                // goalie
   goalAgainst: -15,       // goalie
+  shGoal: 20, shAssist: 10, ppAssist: 5,   // shorthanded goal, shorthanded assist, powerplay assist
+  gwg: 15,                // game winning goal
+  pwg: 15,                // shootout winning goal ("Penalty Winning Goal")
+  faceoffWon: 2, faceoffLost: -2,
+  missedShot: -5,         // shot wide or on the post
+  psFoul: -35,            // foul that gives a penalty shot
+  penaltyMatch: -125,
+  timeOnIce: 1,           // per full minute on the ice (skaters)
+  goalieTime: 1,          // goalie time bonus per 10 minutes played
   emptySlot: -50,         // per unfilled line-up position (16 needed)
   // Penalties by length: 2 min = -10, 5 min (major) = -75, 10 min (misconduct) = -50
   penalty2: -10, penalty5: -75, penalty10: -50,
