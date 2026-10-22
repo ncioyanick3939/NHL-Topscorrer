@@ -1,3 +1,4 @@
+import dns from 'node:dns';
 import { autoFillAll } from './lineup.js';
 import { db, tx, getMeta, setMeta } from './db.js';
 import { NHL_API, NHL_TEAMS, PRICE, RULES, SCORING } from './config.js';
