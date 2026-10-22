@@ -1,8 +1,8 @@
 import { autoFillAll } from './lineup.js';
 import dns from 'node:dns';
 import { db, tx, getMeta, setMeta } from './db.js';
-import { NHL_API, NHL_TEAMS, PRICE, RULES } from './config.js';
-import { statsToPoints, nextPrice, summarize, seasonPoints } from './scoring.js';
+import { NHL_API, NHL_TEAMS, PRICE, RULES, SCORING } from './config.js';
+import { statsToPoints, nextPrice, summarize, seasonPoints, resultPoints } from './scoring.js';
 import { rolloverReached } from './util.js';
 import { refreshMarket } from './market.js';
 import { syncInjuries, injurySyncDue } from './injuries.js';
@@ -90,18 +90,29 @@ export function parseRosterSpots(json) {
 
 export function parseBoxscore(json) {
   const players = [];
-  const sides = [['homeTeam', json.homeTeam?.abbrev], ['awayTeam', json.awayTeam?.abbrev]];
+  const sides = [['homeTeam', json.homeTeam?.abbrev, json.awayTeam], ['awayTeam', json.awayTeam?.abbrev, json.homeTeam]];
   const byGame = json.playerByGameStats ?? {};
-  for (const [key, team] of sides) {
+  const final = isFinal(json.gameState);
+  const last = json.gameOutcome?.lastPeriodType ?? json.periodDescriptor?.periodType ?? 'REG';
+  for (const [key, team, oppTeam] of sides) {
     const t = byGame[key] ?? {};
+    const own = json[key]?.score ?? null;
+    const opp = oppTeam?.score ?? null;
+    // Game result of this team (only known once the game is over).
+    let result = null;
+    if (final && own != null && opp != null) {
+      result = own > opp ? (last === 'REG' ? 'W' : 'OTW') : last === 'SO' ? 'SOL' : last === 'OT' ? 'OTL' : 'L';
+    }
+    const zero = final && opp === 0;
     for (const [list, pos] of [[t.forwards, 'F'], [t.defense, 'D']]) {
       for (const p of list ?? []) {
         if (toiSeconds(p.toi) === 0) continue; // did not play
         players.push({
           id: p.playerId, team, pos, name: p.name?.default ?? '',
-          goals: p.goals ?? 0, assists: p.assists ?? 0, shots: p.sog ?? 0,
+          goals: p.goals ?? 0, assists: p.assists ?? 0, shots: p.sog ?? 0, pp_goals: p.powerPlayGoals ?? 0,
           blocked: p.blockedShots ?? 0, pim: p.pim ?? 0, plus_minus: p.plusMinus ?? 0,
-          saves: 0, goals_against: 0, win: 0, shutout: 0,
+          saves: 0, goals_against: 0, win: result === 'W' || result === 'OTW' ? 1 : 0, shutout: 0,
+          dressed: 1, zero_against: zero ? 1 : 0, result,
         });
       }
     }
@@ -111,12 +122,13 @@ export function parseBoxscore(json) {
       let saves = p.saves;
       if (saves == null && typeof p.saveShotsAgainst === 'string') saves = Number(p.saveShotsAgainst.split('/')[0]);
       const ga = p.goalsAgainst ?? 0;
+      const shutout = ga === 0 && secs >= 3540 && final ? 1 : 0;
       players.push({
         id: p.playerId, team, pos: 'G', name: p.name?.default ?? '',
-        goals: p.goals ?? 0, assists: p.assists ?? 0, shots: 0, blocked: 0, pim: p.pim ?? 0, plus_minus: 0,
+        goals: p.goals ?? 0, assists: p.assists ?? 0, shots: 0, pp_goals: 0, blocked: 0, pim: p.pim ?? 0, plus_minus: 0,
         saves: saves ?? 0, goals_against: ga,
-        win: p.decision === 'W' ? 1 : 0,
-        shutout: ga === 0 && secs >= 3540 && isFinal(json.gameState) ? 1 : 0,
+        win: p.decision === 'W' ? 1 : 0, shutout,
+        dressed: 1, zero_against: zero && ga === 0 ? 1 : 0, result,
       });
     }
   }
@@ -132,18 +144,18 @@ export function parseBoxscore(json) {
 export function parseClubStats(json) {
   const out = [];
   for (const s of json.skaters ?? []) {
-    out.push({ id: s.playerId, games: s.gamesPlayed ?? 0, goals: s.goals ?? 0, assists: s.assists ?? 0,
+    out.push({ id: s.playerId, pos: s.positionCode === 'D' ? 'D' : 'F', games: s.gamesPlayed ?? 0, goals: s.goals ?? 0, assists: s.assists ?? 0,
       plus_minus: s.plusMinus ?? 0, shots: s.shots ?? 0, pim: s.penaltyMinutes ?? 0, wins: 0, saves: 0, goals_against: 0, shutouts: 0 });
   }
   for (const g of json.goalies ?? []) {
-    out.push({ id: g.playerId, games: g.gamesPlayed ?? 0, goals: 0, assists: 0, plus_minus: 0, shots: 0, pim: 0,
+    out.push({ id: g.playerId, pos: 'G', games: g.gamesPlayed ?? 0, goals: 0, assists: 0, plus_minus: 0, shots: 0, pim: 0,
       wins: g.wins ?? 0, saves: g.saves ?? 0, goals_against: g.goalsAgainst ?? 0, shutouts: g.shutouts ?? 0 });
   }
   return out;
 }
 
 /** player/{id}/game-log/now -> the games of the season in plain form, newest first. */
-export function parseGameLog(json, limit = 100) {
+export function parseGameLog(json, limit = 100, pos = 'F') {
   return (json.gameLog ?? []).slice(0, limit).map((g) => {
     const goalie = g.decision != null || g.shotsAgainst != null;
     let text, pts;
@@ -151,10 +163,10 @@ export function parseGameLog(json, limit = 100) {
       const saves = Math.max(0, (g.shotsAgainst ?? 0) - (g.goalsAgainst ?? 0));
       const win = g.decision === 'W' ? 1 : 0;
       const shutout = (g.goalsAgainst ?? 0) === 0 && (g.shotsAgainst ?? 0) > 0 && toiSeconds(g.toi) >= 3540 ? 1 : 0;
-      pts = statsToPoints({ saves, goals_against: g.goalsAgainst ?? 0, win, shutout });
+      pts = statsToPoints({ pos: 'G', saves, goals_against: g.goalsAgainst ?? 0, win, shutout, dressed: 1, goals: g.goals, assists: g.assists });
       text = `${saves} Paraden, ${g.goalsAgainst ?? 0} Gegentore${win ? ', Sieg' : ''}`;
     } else {
-      pts = statsToPoints({ goals: g.goals, assists: g.assists, shots: g.shots, pim: g.pim, plus_minus: g.plusMinus });
+      pts = statsToPoints({ pos, goals: g.goals, assists: g.assists, shots: g.shots, pim: g.pim, plus_minus: g.plusMinus, pp_goals: g.powerPlayGoals, dressed: 1 });
       const bits = [];
       if (g.goals) bits.push(`${g.goals} ${g.goals === 1 ? 'Tor' : 'Tore'}`);
       if (g.assists) bits.push(`${g.assists} ${g.assists === 1 ? 'Assist' : 'Assists'}`);
@@ -162,7 +174,7 @@ export function parseGameLog(json, limit = 100) {
       bits.push(`${g.plusMinus > 0 ? '+' : ''}${g.plusMinus ?? 0}`, `${g.shots ?? 0} Schüsse`);
       text = bits.join(', ');
     }
-    return { gameId: g.gameId ?? null, team: g.teamAbbrev ?? null, date: g.gameDate, opp: g.opponentAbbrev, home: g.homeRoadFlag === 'H', text, pts, result: null };
+    return { gameId: g.gameId ?? null, team: g.teamAbbrev ?? null, date: g.gameDate, opp: g.opponentAbbrev, home: g.homeRoadFlag === 'H', text, pts, pos: goalie ? 'G' : pos, result: null };
   });
 }
 
@@ -230,6 +242,9 @@ export function addResults(log, resultsByTeam) {
     const own = g.home ? r.home : r.away;
     const opp = g.home ? r.away : r.home;
     g.result = { own, opp, win: own > opp, ot: !!r.ot };
+    // The game result is worth points too (win, loss, overtime) and a clean sheet for goalies and defensemen.
+    const kind = own > opp ? (r.ot ? 'OTW' : 'W') : r.ot ? 'OTL' : 'L';
+    g.pts += resultPoints(kind) + (opp === 0 && (g.pos === 'G' || g.pos === 'D') ? SCORING.zeroAgainst : 0);
   }
   return log;
 }
@@ -249,7 +264,8 @@ export async function getGameLog(playerId) {
   const hit = logCache.get(playerId);
   if (hit && Date.now() - hit.t < 30 * 60_000) return hit.data;
   try {
-    const data = parseGameLog(await fetchJson(`/player/${playerId}/game-log/now`));
+    const pos = db.prepare('SELECT pos FROM players WHERE id = ?').get(playerId)?.pos ?? 'F';
+    const data = parseGameLog(await fetchJson(`/player/${playerId}/game-log/now`), 100, pos);
     const byTeam = new Map();
     for (const team of new Set(data.map((g) => g.team).filter(Boolean))) {
       try { byTeam.set(team, await seasonResults(team)); } catch { /* the result is optional */ }
@@ -461,6 +477,9 @@ export function finalizeDay(day) {
                 WHERE r.lineup > 0
                   AND datetime(u.created_at) <= datetime((SELECT MIN(start_utc) FROM games WHERE day = ?)) -- only games after joining count
                 GROUP BY r.user_id`).run(day, day, day);
+    // 50 points off for every unfilled line-up position (16 needed), as in Topscorers.
+    db.prepare(`UPDATE user_day_points SET pts = pts + ? * MAX(0, ? - (SELECT COUNT(*) FROM roster r WHERE r.user_id = user_day_points.user_id AND r.lineup > 0))
+                WHERE day = ?`).run(SCORING.emptySlot, 16, day);
     db.prepare('UPDATE users SET points = (SELECT COALESCE(SUM(pts),0) FROM user_day_points WHERE user_id=users.id)').run();
     db.prepare('INSERT INTO days (day) VALUES (?)').run(day);
   });

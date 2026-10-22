@@ -37,8 +37,17 @@ const box = (state, hischierGoals) => ({
   },
 });
 
-test('scoring: a goal is 50 points and moves the price by 4.5 percent', () => {
-  assert.equal(statsToPoints({ goals: 1 }), 50);
+test('scoring: Topscorers values by position, results, penalties', () => {
+  assert.equal(statsToPoints({ pos: 'F', goals: 1 }), 60);
+  assert.equal(statsToPoints({ pos: 'D', goals: 1, assists: 1 }), 120);
+  assert.equal(statsToPoints({ pos: 'G', goals: 1 }), 100);
+  assert.equal(statsToPoints({ pos: 'F', assists: 1 }), 40);
+  assert.equal(statsToPoints({ pos: 'F', goals: 3, dressed: 1, result: 'W' }), 3 * 60 + 20 + 5 + 15);
+  assert.equal(statsToPoints({ pos: 'G', saves: 30, goals_against: 0, shutout: 1, zero_against: 1, dressed: 1, result: 'W' }), 120 + 40 + 10 + 5 + 15);
+  assert.equal(statsToPoints({ pos: 'F', pim: 2 }), -10);
+  assert.equal(statsToPoints({ pos: 'F', pim: 5 }), -75);
+  assert.equal(statsToPoints({ pos: 'F', pim: 10 }), -50);
+  assert.equal(statsToPoints({ pos: 'F', dressed: 1, result: 'OTL' }), 10);
   assert.equal(nextPrice(1_000_000, 50), 1_045_000);
   assert.equal(nextPrice(1_000_000, -50), 955_000);
   assert.equal(nextPrice(1_000_000, 1000), 1_150_000); // capped at +15 %
@@ -65,7 +74,7 @@ test('live points, trade lock, and next-day price move from real-format data', a
   db.prepare(`INSERT INTO games (id, day, state, home, away, start_utc) VALUES (1,'2026-10-22','LIVE','NJD','EDM', ?)`).run(new Date(Date.now() + 3_600_000).toISOString()); // starts after the manager joined
   nhl.applyBoxscore(g, nhl.parseBoxscore(box('LIVE', 1)));
   const live = game.liveView(uid);
-  assert.equal(live.mine[0].pts, 50 + 3 * 2 + 5); // goal + 3 shots + plus/minus
+  assert.equal(live.mine[0].pts, 60 + 3 * 5 + 5 + 5); // goal + 3 shots + plus/minus + lineup
   assert.equal(db.prepare('SELECT price FROM players WHERE id=8480002').get().price, 1_000_000);
   assert.throws(() => game.sell(uid, 8480002), /Gesperrt/);
   assert.throws(() => game.buy(uid, 8480010), /Gesperrt/);
@@ -79,8 +88,8 @@ test('live points, trade lock, and next-day price move from real-format data', a
   assert.deepEqual(nhl.finalizeDueDays(new Date('2026-10-23T09:00:00Z')), ['2026-10-22']);
   const p = db.prepare('SELECT price, prev_price FROM players WHERE id=8480002').get();
   assert.equal(p.prev_price, 1_000_000);
-  assert.equal(p.price, nextPrice(1_000_000, 61)); // 61 points
-  assert.equal(game.myTeam(uid).points, 61);
+  assert.equal(p.price, nextPrice(1_000_000, 100)); // 85 live + 15 for the win
+  assert.equal(game.myTeam(uid).points, 100 - 15 * 50); // minus 50 for each of the 15 empty line-up positions
   assert.equal(game.sell(uid, 8480002).price, p.price);
 
   // Finalizing twice changes nothing.
@@ -219,10 +228,10 @@ test('season stats come from the NHL table, not from days counted since the app 
   nhl.applySeasonStats(list);
   const h = db.prepare('SELECT games, goals, assists, plus_minus, shots, pim, fantasy_pts FROM players WHERE id=8480002').get();
   assert.deepEqual([h.games, h.goals, h.assists, h.plus_minus, h.shots, h.pim], [8, 4, 6, 3, 25, 2]);
-  assert.equal(h.fantasy_pts, 4 * 50 + 6 * 25 + 25 * 2 - 2 * 2 + 3 * 5); // 411
+  assert.equal(h.fantasy_pts, 4 * 60 + 6 * 40 + 25 * 5 - 2 * 5 + 3 * 5 + 8 * 5); // 650
   const g = db.prepare('SELECT games, wins, fantasy_pts FROM players WHERE id=8480010').get();
   assert.deepEqual([g.games, g.wins], [6, 4]);
-  assert.equal(g.fantasy_pts, 150 - 12 * 15 + 4 * 20 + 30);
+  assert.equal(g.fantasy_pts, 150 * 4 - 12 * 15 + 4 * 15 + 40 + 6 * 5);
   // a later game day being finalized must not overwrite the NHL totals
   const before = db.prepare('SELECT games FROM players WHERE id=8480002').get().games;
   nhl.finalizeDay('2099-01-01');
@@ -236,13 +245,13 @@ test('game log: last games of a skater and a goalie in plain words', () => {
     { gameDate: '2026-10-17', opponentAbbrev: 'NYR', homeRoadFlag: 'H', decision: 'W', shotsAgainst: 30, goalsAgainst: 2, toi: '60:00' },
   ] });
   assert.equal(rows.length, 3);
-  assert.equal(rows[0].pts, 50 + 25 + 4 * 2 + 2 * 5);
+  assert.equal(rows[0].pts, 60 + 40 + 4 * 5 + 2 * 5 + 5);
   assert.equal(rows[0].text, '1 Tor, 1 Assist, +2, 4 Schüsse');
   assert.equal(rows[0].home, true);
   assert.equal(rows[1].home, false);
   assert.equal(rows[1].text, 'kein Punkt, -1, 1 Schüsse');
   assert.equal(rows[2].text, '28 Paraden, 2 Gegentore, Sieg');
-  assert.equal(rows[2].pts, 28 - 2 * 15 + 20);
+  assert.equal(rows[2].pts, 28 * 4 - 2 * 15 + 5);
 });
 
 test('"not in the last game" is never shown for goalies or when that game was not read', () => {

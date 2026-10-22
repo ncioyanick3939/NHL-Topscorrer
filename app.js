@@ -12,7 +12,7 @@ const TEAM_COLORS = {
 };
 const POS = { F: 'Stürmer', D: 'Verteidiger', G: 'Torhüter' };
 
-const S = { scrollNext: false, wantNext: false, gsub: 'up', line: 1, team: null, tab: 'board', sub: { team: 'market', league: 'rank', nhl: 'games', live: 'play' }, mode: 'buy', me: null, pos: '', sort: 'expiry', q: '', top: '', timer: null, cd: null };
+const S = { scrollNext: false, wantNext: false, gsub: 'up', line: 1, team: null, tab: 'board', sub: { team: 'market', league: 'rank', nhl: 'games', live: 'team' }, liveSeg: 'lineup', mode: 'buy', me: null, pos: '', sort: 'expiry', q: '', top: '', timer: null, cd: null };
 
 /* ---------- helpers ---------- */
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -298,18 +298,22 @@ const views = {
   async live() {
     const [d, t, lg] = await Promise.all([api('/api/live'), api('/api/team'), api('/api/league')]);
     const running = d.games.some((g) => g.state === 'LIVE' || g.state === 'CRIT');
-    const playingTeams = new Set(d.games.filter((g) => g.day === d.openDay).flatMap((g) => [g.home, g.away]));
+    const head = subtabs('live', [['team', 'Team'], ['league', 'Liga']]);
+    const top = `${running ? '<div class="livebar"><i></i>Spiele laufen · deine Punkte heute: <b>' + d.myPoints + '</b></div>' : countdown(d.nextStart)}`;
+    if (S.sub.live === 'league') {
+      const board = [...lg].sort((x, y) => y.live - x.live || y.points - x.points);
+      return `${head}${top}<div class="rhead"><span>Gesamt</span><span>Heute</span></div>
+        ${board.map((r, i) => `<div class="rank${r.me ? ' me' : ''}"><div class="n">${i + 1}.</div><div class="grow"><div class="rname">${esc(r.name)}${r.me ? ' (du)' : ''}</div></div><div class="rv">${fmt(r.points - r.live)}</div><div class="rp ${r.live > 0 ? 'up' : ''}">${r.live > 0 ? '+' : ''}${r.live}</div></div>`).join('')}
+        <div class="note">So viele Punkte machen alle Manager heute mit ihrer Aufstellung. Die Zahlen laufen live mit den Spielen.</div>`;
+    }
     const pts = new Map(d.mine.map((r) => [r.id, r]));
-    const playing = t.players.filter((p) => playingTeams.has(p.team));
-    const off = t.players.filter((p) => !playingTeams.has(p.team));
-    const shown = S.sub.live === 'off' ? off : playing;
+    const inL = t.players.filter((p) => p.lineup > 0);
+    const bench = t.players.filter((p) => p.lineup <= 0);
+    const shown = S.liveSeg === 'bench' ? bench : inL;
     const row = (p) => { const r = pts.get(p.id); return prow(p, { sub: p.dressed ? `<b>${r ? r.goals : 0}</b><small>Tore</small><b>${r ? r.assists : 0}</b><small>Assists</small>` : '<small>noch kein Einsatz</small>', right: `<b class="${r && r.pts > 0 ? 'up' : ''}">${r ? (r.pts > 0 ? '+' : '') + r.pts : 0}</b><small>Live</small>` }); };
-    const board = [...lg].sort((x, y) => y.live - x.live || y.points - x.points);
-    const standings = `<h2>Manager heute <small>Punkte aus der Aufstellung</small></h2>${board.map((r, i) => `<div class="rank${r.me ? ' me' : ''}"><div class="n">${i + 1}.</div><div class="grow"><div class="rname">${esc(r.name)}${r.me ? ' (du)' : ''}</div></div><div class="rv">${fmt(r.points - r.live)} total</div><div class="rp ${r.live > 0 ? 'up' : ''}">${r.live > 0 ? '+' : ''}${r.live}<small>heute</small></div></div>`).join('')}<h2>Deine Spieler</h2>`;
-    return `${running ? '<div class="livebar"><i></i>Spiele laufen · deine Punkte heute: <b>' + d.myPoints + '</b></div>' : countdown(d.nextStart)}
-      ${standings}
-      ${shown.length ? shown.map(row).join('') : `<div class="empty">${S.sub.live === 'off' ? 'Alle deine Spieler haben heute ein Spiel.' : 'Heute spielt keiner deiner Spieler.'}</div>`}
-      <div class="floatseg">${seg('lsub', S.sub.live, [['play', 'Im Spiel (' + playing.length + ')'], ['off', 'Spielfrei (' + off.length + ')']])}</div>
+    return `${head}${top}
+      ${shown.length ? shown.map(row).join('') : `<div class="empty">${S.liveSeg === 'bench' ? 'Alle deine Spieler stehen in der Aufstellung.' : 'Noch niemand in der Aufstellung. Stelle dein Team im Tab Team zusammen.'}</div>`}
+      <div class="floatseg">${seg('lsub', S.liveSeg, [['lineup', 'Aufstellung (' + inL.length + ')'], ['bench', 'Ersatz (' + bench.length + ')']])}</div>
       <div class="note">Die Punkte laufen live. Der Preis ändert sich einmal am nächsten Morgen, wenn alle Spiele des Tages fertig sind.</div>`;
   },
 
@@ -500,11 +504,15 @@ async function openRules() {
     <h3>Bieten</h3><p>Du kaufst per geheimem Gebot, mindestens zum Marktwert. Du kannst dein Gebot bis zum Ablauf ändern oder zurückziehen. Wer bei Ablauf am meisten geboten hat, bekommt den Spieler und zahlt sein Gebot (bei Gleichstand gewinnt das frühere Gebot). Wer verliert, zahlt nichts. Niemand sieht, wer wie viel geboten hat.</p>
     <h3>Verkaufen</h3><p>Du kannst einen Spieler sofort zum Marktwert verkaufen. Oder du bietest ihn den anderen Managern ${u.userListingHours} Stunden lang an. Sie bieten, nur du siehst die Angebote und nimmst eines an.</p>
     <h3>Sperre</h3><p>Sobald das Team eines Spielers spielt, ist er bis zum Tagesabschluss gesperrt. Er kann weder gekauft noch verkauft werden.</p>
-    <h3>Live-Punkte</h3><p>Während der Spiele zählen die echten Ereignisse live:</p><ul class="rl">
-    ${line('Tor', s.goal)}${line('Assist', s.assist)}${line('Schuss aufs Tor', s.shot)}${line('Geblockter Schuss', s.blocked)}${line('Strafminute', s.pim)}${line('Plus/Minus (pro Punkt)', s.plusMinus)}
-    ${line('Torhüter: Parade', s.save)}${line('Torhüter: Gegentor', s.goalAgainst)}${line('Torhüter: Sieg', s.win)}${line('Torhüter: Shutout', s.shutout)}</ul>
-    <p class="note">Nur das Tor mit 50 Punkten ist von Topscorers übernommen. Die anderen Werte sind Platzhalter.</p>
-    <h3>Preisänderung</h3><p>Nach dem Ende aller Spiele eines Tages (am nächsten Morgen ab ${u.rolloverHourZurich}:00 Uhr Zürcher Zeit) ändert sich der Preis um ${p.pctPerPoint} % pro Punkt, höchstens ${p.capPct} % pro Tag. Ein Tor (50 Punkte) gibt also ${(50 * p.pctPerPoint).toFixed(1)} %. Der Mindestpreis ist ${fmt(p.minPrice)}.</p>
+    <h3>Live-Punkte</h3><p>Es zählen die echten Ereignisse der NHL-Spiele, mit den Werten von Topscorers:</p><ul class="rl">
+    ${line('Tor Torhüter', s.goal.G)}${line('Tor Verteidiger', s.goal.D)}${line('Tor Stürmer', s.goal.F)}
+    ${line('Assist Torhüter', s.assist.G)}${line('Assist Verteidiger', s.assist.D)}${line('Assist Stürmer', s.assist.F)}
+    ${line('Shutout (Torhüter)', s.shutout)}${line('Hattrick', s.hattrick)}${line('Powerplay-Tor', s.powerplayGoal)}
+    ${line('Sieg', s.win)}${line('Sieg in Verlängerung/Penaltys', s.winOT)}${line('Niederlage n.V.', s.lossOT)}${line('Niederlage Penaltyschiessen', s.lossSO)}${line('Niederlage', s.loss)}
+    ${line('Zero Against (Torhüter, Verteidiger)', s.zeroAgainst)}${line('Geblockter Schuss', s.blocked)}${line('Schuss aufs Tor', s.shot)}${line('Im Spiel dabei', s.lineup)}${line('Plus/Minus (pro Punkt)', s.plusMinus)}
+    ${line('Parade', s.save)}${line('Gegentor', s.goalAgainst)}${line('Strafe 2 Min.', s.penalty2)}${line('Strafe 5 Min.', s.penalty5)}${line('Strafe 10 Min.', s.penalty10)}${line('Leere Aufstellungsposition', s.emptySlot)}</ul>
+    <p class="note">Noch nicht eingebaut, weil die NHL-Daten es nicht hergeben: Unterzahl-Tor, Siegtor, Bullys, Fehlschüsse und Pfosten, Strafschuss-Aktionen, Zeit auf dem Eis.</p>
+    <h3>Preisänderung</h3><p>Nach dem Ende aller Spiele eines Tages (am nächsten Morgen ab ${u.rolloverHourZurich}:00 Uhr Zürcher Zeit) ändert sich der Preis um ${p.pctPerPoint} % pro Punkt, höchstens ${p.capPct} % pro Tag. Ein Tor eines Stürmers (60 Punkte) gibt also ${(60 * p.pctPerPoint).toFixed(1)} %. Der Mindestpreis ist ${fmt(p.minPrice)}.</p>
     <h3>Rangliste</h3><p>Die Rangliste zählt die Punkte deiner Spieler. Der Teamwert ist die Summe der Marktwerte deines Kaders.</p>`);
 }
 
@@ -572,7 +580,7 @@ document.addEventListener('click', async (e) => {
   const add = t.closest('[data-add]');
   if (add) { const [pos, ln] = add.dataset.add.split(':'); return addSheet(pos, Number(ln)); }
   const lsub = t.closest('[data-lsub]');
-  if (lsub) { S.sub.live = lsub.dataset.lsub; return render(); }
+  if (lsub) { S.liveSeg = lsub.dataset.lsub; return render(); }
   if (t.closest('[data-settings]')) return openSettings();
 });
 document.addEventListener('keydown', (e) => {

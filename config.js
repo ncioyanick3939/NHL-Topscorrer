@@ -1,18 +1,27 @@
 // All game rules in one place. Values marked "placeholder" are guesses: adjust them to taste.
 
 export const SCORING = {
-  // Skaters (placeholder, except goal = 50 which the owner named)
-  goal: 50,
-  assist: 25,
-  shot: 2,          // per shot on goal
-  blocked: 2,       // per blocked shot
-  pim: -2,          // per penalty minute
-  plusMinus: 5,     // per +1 / -1
-  // Goalies (placeholder)
-  save: 1,
-  goalAgainst: -15,
-  win: 20,
-  shutout: 30,
+  // Taken from the Topscorers "Game rules" page (National League), transferred 1:1 where the NHL data allows it.
+  goal: { F: 60, D: 70, G: 100 },
+  assist: { F: 40, D: 50, G: 55 },
+  shutout: 40,            // goalie
+  hattrick: 20,           // 3+ goals in one game
+  powerplayGoal: 10,
+  win: 15,                // game won in regulation (every player who dressed)
+  winOT: 10,              // game won in overtime or shootout
+  lossOT: 5,              // game lost in overtime
+  lossSO: -10,            // game lost in the shootout
+  loss: -15,              // game lost in regulation
+  zeroAgainst: 10,        // goalie and defensemen when the team concedes no goal
+  blocked: 10,            // per blocked shot
+  shot: 5,                // per shot on goal
+  lineup: 5,              // player really played in the game
+  plusMinus: 5,           // per +1 / -1
+  save: 4,                // goalie
+  goalAgainst: -15,       // goalie
+  emptySlot: -50,         // per unfilled line-up position (16 needed)
+  // Penalties by length: 2 min = -10, 5 min (major) = -75, 10 min (misconduct) = -50
+  penalty2: -10, penalty5: -75, penalty10: -50,
 };
 
 export const PRICE = {
