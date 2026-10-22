@@ -142,8 +142,8 @@ export function parseClubStats(json) {
   return out;
 }
 
-/** player/{id}/game-log/now -> the last games in plain form. */
-export function parseGameLog(json, limit = 5) {
+/** player/{id}/game-log/now -> the games of the season in plain form, newest first. */
+export function parseGameLog(json, limit = 100) {
   return (json.gameLog ?? []).slice(0, limit).map((g) => {
     const goalie = g.decision != null || g.shotsAgainst != null;
     let text, pts;

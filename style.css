@@ -226,3 +226,10 @@ nav.bar button{font-size:10px;padding:9px 0}nav.bar svg{width:20px;height:20px}
 .evt{width:44px;color:var(--mute);font-size:12px;font-variant-numeric:tabular-nums}
 .evm{flex:1;min-width:0}.evm b{display:block;font-size:15px}.evm small{color:var(--mute);font-size:12px}
 .evs{font-family:var(--f-display);font-size:18px;font-weight:700;color:var(--yellow)}
+
+.bars{display:flex;gap:6px;overflow-x:auto;padding:12px 4px 6px;background:var(--navy-2);border-radius:14px;margin-bottom:12px;align-items:flex-end}
+.bar{display:grid;justify-items:center;gap:4px;min-width:38px;align-content:end}
+.bar b{font:700 13px var(--f-display);font-variant-numeric:tabular-nums}
+.bar i{width:14px;background:var(--yellow);border-radius:4px;display:block}
+.bar i.neg{background:var(--down)}
+.bar span{font-size:9px;color:var(--mute)}
