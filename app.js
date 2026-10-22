@@ -159,7 +159,7 @@ async function openPlayer(id) {
     <div class="grid4"><div><b>${d.games}</b><span>Spiele</span></div><div><b>${d.goals}</b><span>Tore</span></div><div><b>${d.assists}</b><span>Assists</span></div><div><b>${d.plusMinus > 0 ? '+' : ''}${d.plusMinus}</b><span>+/−</span></div>
       <div><b>${d.shots}</b><span>Schüsse</span></div><div><b>${d.pim}</b><span>Strafmin.</span></div><div><b>${d.wins}</b><span>Siege</span></div><div><b>${d.blocked ?? 0}</b><span>Geblockt</span></div></div>
     ${injBlock}${live}${bigChart(d.hist)}
-    ${gamesHtml(d.recent)}
+    ${gamesHtml(d.recent, d.recentError)}
     <h2>Preisänderungen</h2>
     ${d.log.length ? `<ul class="log">${d.log.map((l) => `<li><div>${esc(l.day)}<small>${esc(l.summary || '')}</small></div><div style="text-align:right"><b>${l.pts > 0 ? '+' : ''}${l.pts} Pkt</b><small>${fmt(l.price)}</small></div></li>`).join('')}</ul>` : '<div class="empty">Noch keine Preisänderung. Sie kommt nach dem ersten abgeschlossenen Spieltag.</div>'}
     ${trans}${action}${lockInfo}</div>`;
@@ -178,8 +178,8 @@ async function openPlayer(id) {
 
 /** Points per game: bar chart (oldest left) and a numbered list (newest first), like Topscorers. */
 const res = (g) => (g.result ? `<span class="res ${g.result.win ? 'win' : 'loss'}">${g.result.own}:${g.result.opp}${g.result.ot ? ' n.V.' : ''} ${g.result.win ? 'S' : 'N'}</span>` : '');
-function gamesHtml(log) {
-  if (!log || !log.length) return '<h2>Spiele <small>echte NHL-Daten</small></h2><div class="empty">Die Spiele konnten gerade nicht geladen werden.</div>';
+function gamesHtml(log, err) {
+  if (!log || !log.length) return `<h2>Spiele <small>echte NHL-Daten</small></h2><div class="empty">${log ? 'Noch keine Spiele in dieser Saison.' : 'Die Spiele konnten gerade nicht geladen werden.'}${err ? `<br><small>${esc(err)}</small>` : ''}</div>`;
   const chrono = [...log].reverse();
   const max = Math.max(1, ...chrono.map((g) => Math.abs(g.pts)));
   const dm = (s) => { const [y, m, d] = String(s).split('-'); return d && m ? `${d}.${m}.` : s; };

@@ -337,7 +337,9 @@ export async function getGameLog(playerId) {
   if (hit && Date.now() - hit.t < 30 * 60_000) return hit.data;
   try {
     const pos = db.prepare('SELECT pos FROM players WHERE id = ?').get(playerId)?.pos ?? 'F';
-    const data = parseGameLog(await fetchJson(`/player/${playerId}/game-log/now`), 100, pos);
+    let raw;
+    try { raw = await fetchJson(`/player/${playerId}/game-log/now`); } catch { raw = await fetchJson(`/player/${playerId}/game-log/now`); } // one retry
+    const data = parseGameLog(raw, 100, pos);
     const byTeam = new Map();
     for (const team of new Set(data.map((g) => g.team).filter(Boolean))) {
       try { byTeam.set(team, await seasonResults(team)); } catch { /* the result is optional */ }
@@ -345,10 +347,13 @@ export async function getGameLog(playerId) {
     addResults(data, byTeam);
     logCache.set(playerId, { t: Date.now(), data });
     return data;
-  } catch {
+  } catch (e) {
+    console.log(`Spielverlauf von Spieler ${playerId} nicht geladen: ${e.message}`);
+    lastLogError = e.message;
     return hit?.data ?? null;
   }
 }
+export let lastLogError = '';
 
 /** Write season totals into the players table. Fantasy points are calculated from the totals. */
 export function applySeasonStats(list) {

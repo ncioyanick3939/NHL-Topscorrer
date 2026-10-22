@@ -5,7 +5,7 @@ import { randomBytes } from 'node:crypto';
 import { extname, join } from 'node:path';
 import * as game from './game.js';
 import { SCORING, PRICE, RULES } from './config.js';
-import { startScheduler, getGameLog, getGameEvents } from './nhl.js';
+import { startScheduler, getGameLog, getGameEvents, lastLogError } from './nhl.js';
 
 const ROOT = new URL('.', import.meta.url).pathname;
 const PORT = Number(process.env.PORT || 3000);
@@ -131,6 +131,7 @@ async function api(req, res, url) {
   if (m && req.method === 'GET') {
     const detail = game.playerDetail(user.id, Number(m[1]));
     detail.recent = await getGameLog(detail.id); // real last games from the NHL, null if unavailable
+    if (!detail.recent) detail.recentError = lastLogError;
     return send(res, 200, detail);
   }
   throw new game.HttpError(404, 'Nicht gefunden.');
