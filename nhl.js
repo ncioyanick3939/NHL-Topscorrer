@@ -1,7 +1,7 @@
 import dns from 'node:dns';
 import { db, tx, getMeta, setMeta } from './db.js';
 import { NHL_API, NHL_TEAMS, PRICE, RULES } from './config.js';
-import { statsToPoints, nextPrice, summarize } from './scoring.js';
+import { statsToPoints, nextPrice, summarize, seasonPoints } from './scoring.js';
 import { rolloverReached } from './util.js';
 import { refreshMarket } from './market.js';
 import { syncInjuries, injurySyncDue } from './injuries.js';
@@ -120,6 +120,83 @@ export function parseBoxscore(json) {
     awayScore: json.awayTeam?.score ?? null,
     players,
   };
+}
+
+/** club-stats/{TEAM}/{season}/2 -> season totals per player. */
+export function parseClubStats(json) {
+  const out = [];
+  for (const s of json.skaters ?? []) {
+    out.push({ id: s.playerId, games: s.gamesPlayed ?? 0, goals: s.goals ?? 0, assists: s.assists ?? 0,
+      plus_minus: s.plusMinus ?? 0, shots: s.shots ?? 0, pim: s.penaltyMinutes ?? 0, wins: 0, saves: 0, goals_against: 0, shutouts: 0 });
+  }
+  for (const g of json.goalies ?? []) {
+    out.push({ id: g.playerId, games: g.gamesPlayed ?? 0, goals: 0, assists: 0, plus_minus: 0, shots: 0, pim: 0,
+      wins: g.wins ?? 0, saves: g.saves ?? 0, goals_against: g.goalsAgainst ?? 0, shutouts: g.shutouts ?? 0 });
+  }
+  return out;
+}
+
+/** player/{id}/game-log/now -> the last games in plain form. */
+export function parseGameLog(json, limit = 5) {
+  return (json.gameLog ?? []).slice(0, limit).map((g) => {
+    const goalie = g.decision != null || g.shotsAgainst != null;
+    let text, pts;
+    if (goalie) {
+      const saves = Math.max(0, (g.shotsAgainst ?? 0) - (g.goalsAgainst ?? 0));
+      const win = g.decision === 'W' ? 1 : 0;
+      const shutout = (g.goalsAgainst ?? 0) === 0 && (g.shotsAgainst ?? 0) > 0 && toiSeconds(g.toi) >= 3540 ? 1 : 0;
+      pts = statsToPoints({ saves, goals_against: g.goalsAgainst ?? 0, win, shutout });
+      text = `${saves} Paraden, ${g.goalsAgainst ?? 0} Gegentore${win ? ', Sieg' : ''}`;
+    } else {
+      pts = statsToPoints({ goals: g.goals, assists: g.assists, shots: g.shots, pim: g.pim, plus_minus: g.plusMinus });
+      const bits = [];
+      if (g.goals) bits.push(`${g.goals} ${g.goals === 1 ? 'Tor' : 'Tore'}`);
+      if (g.assists) bits.push(`${g.assists} ${g.assists === 1 ? 'Assist' : 'Assists'}`);
+      if (!bits.length) bits.push('kein Punkt');
+      bits.push(`${g.plusMinus > 0 ? '+' : ''}${g.plusMinus ?? 0}`, `${g.shots ?? 0} Schüsse`);
+      text = bits.join(', ');
+    }
+    return { date: g.gameDate, opp: g.opponentAbbrev, home: g.homeRoadFlag === 'H', text, pts };
+  });
+}
+
+const logCache = new Map();
+/** Last games of one player from the NHL, cached for 30 minutes. Returns null if the NHL does not answer. */
+export async function getGameLog(playerId) {
+  const hit = logCache.get(playerId);
+  if (hit && Date.now() - hit.t < 30 * 60_000) return hit.data;
+  try {
+    const data = parseGameLog(await fetchJson(`/player/${playerId}/game-log/now`));
+    logCache.set(playerId, { t: Date.now(), data });
+    return data;
+  } catch {
+    return hit?.data ?? null;
+  }
+}
+
+/** Write season totals into the players table. Fantasy points are calculated from the totals. */
+export function applySeasonStats(list) {
+  const upd = db.prepare(`UPDATE players SET games=?, goals=?, assists=?, plus_minus=?, shots=?, pim=?, wins=?, fantasy_pts=? WHERE id=?`);
+  tx(() => {
+    for (const t of list) upd.run(t.games, t.goals, t.assists, t.plus_minus, t.shots, t.pim, t.wins, seasonPoints(t), t.id);
+  });
+  return list.length;
+}
+
+/** Real season statistics for all players from the NHL (current season, regular season). */
+export async function syncSeasonStats({ log = console.log } = {}) {
+  const { cur } = seasonStrings();
+  let n = 0;
+  for (const team of NHL_TEAMS) {
+    try {
+      n += applySeasonStats(parseClubStats(await fetchJson(`/club-stats/${team}/${cur}/2`)));
+    } catch (e) {
+      log(`  ${team}: Saisonstatistik nicht geladen (${e.message})`);
+    }
+  }
+  setMeta('last_stats_sync', Date.now());
+  log(`Saisonstatistik geladen: ${n} Spieler`);
+  return n;
 }
 
 /* ---------- Start price ---------- */
@@ -252,17 +329,7 @@ export function finalizeDay(day) {
       db.prepare(`INSERT INTO price_history (player_id, day, price, pts, summary) VALUES (?,?,?,?,?)
                   ON CONFLICT(player_id, day) DO UPDATE SET price=excluded.price, pts=excluded.pts, summary=excluded.summary`)
         .run(r.player_id, day, price, r.pts, summarize(r));
-      db.prepare(`UPDATE players SET
-          games = (SELECT COUNT(*) FROM day_stats WHERE player_id=players.id),
-          goals = (SELECT COALESCE(SUM(goals),0) FROM day_stats WHERE player_id=players.id),
-          assists = (SELECT COALESCE(SUM(assists),0) FROM day_stats WHERE player_id=players.id),
-          plus_minus = (SELECT COALESCE(SUM(plus_minus),0) FROM day_stats WHERE player_id=players.id),
-          shots = (SELECT COALESCE(SUM(shots),0) FROM day_stats WHERE player_id=players.id),
-          blocked = (SELECT COALESCE(SUM(blocked),0) FROM day_stats WHERE player_id=players.id),
-          pim = (SELECT COALESCE(SUM(pim),0) FROM day_stats WHERE player_id=players.id),
-          wins = (SELECT COALESCE(SUM(win),0) FROM day_stats WHERE player_id=players.id),
-          fantasy_pts = (SELECT COALESCE(SUM(pts),0) FROM day_stats WHERE player_id=players.id)
-        WHERE id=?`).run(r.player_id);
+
     }
     db.prepare(`INSERT INTO user_day_points (user_id, day, pts)
                 SELECT r.user_id, ?, COALESCE(SUM(ds.pts),0) FROM roster r
@@ -298,6 +365,7 @@ export async function tick({ log = console.log } = {}) {
     refreshMarket();
     const done = finalizeDueDays();
     if (done.length) log(`Tag abgeschlossen, Preise aktualisiert: ${done.join(', ')}`);
+    if (done.length || Date.now() - Number(getMeta('last_stats_sync') || 0) > 3 * 3600 * 1000) await syncSeasonStats({ log });
   } catch (e) {
     log(`Update fehlgeschlagen: ${e.message}`);
   }
@@ -319,7 +387,8 @@ export function startScheduler(log = console.log) {
 if (import.meta.url === `file://${process.argv[1]}`) {
   const cmd = process.argv[2];
   if (cmd === 'sync') { await syncRosters(); console.log(`${await syncSchedule()} Spiele im Spielplan`); }
+  else if (cmd === 'stats') { await syncSeasonStats(); }
   else if (cmd === 'injuries') { await syncInjuries(); }
   else if (cmd === 'process') { await syncSchedule(); await pollGames(); console.log('Abgeschlossen:', finalizeDueDays()); }
-  else console.log('Nutzung: node nhl.js sync | process | injuries');
+  else console.log('Nutzung: node nhl.js sync | process | injuries | stats');
 }

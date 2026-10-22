@@ -77,10 +77,9 @@ test('live points, trade lock, and next-day price move from real-format data', a
 
   // Next day, 10:00 Zurich passed: price moves, points booked, lock released.
   assert.deepEqual(nhl.finalizeDueDays(new Date('2026-10-23T09:00:00Z')), ['2026-10-22']);
-  const p = db.prepare('SELECT price, prev_price, goals, games FROM players WHERE id=8480002').get();
+  const p = db.prepare('SELECT price, prev_price FROM players WHERE id=8480002').get();
   assert.equal(p.prev_price, 1_000_000);
   assert.equal(p.price, nextPrice(1_000_000, 61)); // 61 points
-  assert.equal(p.goals, 1);
   assert.equal(game.myTeam(uid).points, 61);
   assert.equal(game.sell(uid, 8480002).price, p.price);
 
@@ -176,7 +175,7 @@ test('starter team: 9 forwards, 6 defensemen, 1 goalie, given once and free', ()
 });
 
 test('injuries: names are matched, injured players leave the market, missed games are flagged', () => {
-  db.prepare(`INSERT INTO players (id, team, first, last, pos, price, prev_price) VALUES (7001,'TST','Anton','Lindström','G',500000,500000)`).run();
+  db.prepare(`INSERT INTO players (id, team, first, last, pos, price, prev_price) VALUES (7001,'TST','Anton','Lindström','F',500000,500000)`).run();
   const parsed = injuries.parseInjuries({ injuries: [{ displayName: 'Testteam', injuries: [
     { status: 'Out', athlete: { displayName: 'Anton Lindstrom' }, details: { type: 'Lower Body', detail: 'Knee', returnDate: '2026-11-15T00:00Z' } },
     { status: 'Day-To-Day', athlete: { displayName: 'Vorname1005 Spieler1005' }, shortComment: 'Illness' },
@@ -204,4 +203,50 @@ test('injuries: names are matched, injured players leave the market, missed game
   assert.equal(game.playerDetail(uid, 7001).missedLast, true);
   assert.equal(game.playerDetail(uid, 1006).missedLast, false);
   assert.equal(game.playerDetail(uid, 7001).injury.status, 'out');
+});
+
+/* ---------- Real season stats and game log from the NHL ---------- */
+
+test('season stats come from the NHL table, not from days counted since the app started', () => {
+  const list = nhl.parseClubStats({
+    skaters: [{ playerId: 8480002, gamesPlayed: 8, goals: 4, assists: 6, plusMinus: 3, shots: 25, penaltyMinutes: 2 }],
+    goalies: [{ playerId: 8480010, gamesPlayed: 6, wins: 4, saves: 150, goalsAgainst: 12, shutouts: 1 }],
+  });
+  assert.equal(list.length, 2);
+  nhl.applySeasonStats(list);
+  const h = db.prepare('SELECT games, goals, assists, plus_minus, shots, pim, fantasy_pts FROM players WHERE id=8480002').get();
+  assert.deepEqual([h.games, h.goals, h.assists, h.plus_minus, h.shots, h.pim], [8, 4, 6, 3, 25, 2]);
+  assert.equal(h.fantasy_pts, 4 * 50 + 6 * 25 + 25 * 2 - 2 * 2 + 3 * 5); // 411
+  const g = db.prepare('SELECT games, wins, fantasy_pts FROM players WHERE id=8480010').get();
+  assert.deepEqual([g.games, g.wins], [6, 4]);
+  assert.equal(g.fantasy_pts, 150 - 12 * 15 + 4 * 20 + 30);
+  // a later game day being finalized must not overwrite the NHL totals
+  const before = db.prepare('SELECT games FROM players WHERE id=8480002').get().games;
+  nhl.finalizeDay('2099-01-01');
+  assert.equal(db.prepare('SELECT games FROM players WHERE id=8480002').get().games, before);
+});
+
+test('game log: last games of a skater and a goalie in plain words', () => {
+  const rows = nhl.parseGameLog({ gameLog: [
+    { gameDate: '2026-10-21', opponentAbbrev: 'EDM', homeRoadFlag: 'H', goals: 1, assists: 1, plusMinus: 2, shots: 4, pim: 0 },
+    { gameDate: '2026-10-19', opponentAbbrev: 'BOS', homeRoadFlag: 'R', goals: 0, assists: 0, plusMinus: -1, shots: 1, pim: 2 },
+    { gameDate: '2026-10-17', opponentAbbrev: 'NYR', homeRoadFlag: 'H', decision: 'W', shotsAgainst: 30, goalsAgainst: 2, toi: '60:00' },
+  ] });
+  assert.equal(rows.length, 3);
+  assert.equal(rows[0].pts, 50 + 25 + 4 * 2 + 2 * 5);
+  assert.equal(rows[0].text, '1 Tor, 1 Assist, +2, 4 Schüsse');
+  assert.equal(rows[0].home, true);
+  assert.equal(rows[1].home, false);
+  assert.equal(rows[1].text, 'kein Punkt, -1, 1 Schüsse');
+  assert.equal(rows[2].text, '28 Paraden, 2 Gegentore, Sieg');
+  assert.equal(rows[2].pts, 28 - 2 * 15 + 20);
+});
+
+test('"not in the last game" is never shown for goalies or when that game was not read', () => {
+  const uid = db.prepare("SELECT id FROM users WHERE name = 'Beobachter'").get().id;
+  db.prepare(`INSERT INTO players (id, team, first, last, pos, price, prev_price, games) VALUES (7101,'TST','Back','Upgoalie','G',200000,200000,4)`).run();
+  assert.equal(game.playerDetail(uid, 7101).missedLast, false); // goalie: backups sit all the time
+  db.prepare(`INSERT INTO players (id, team, first, last, pos, price, prev_price, games) VALUES (7102,'NOB','Ohne','Boxscore','F',200000,200000,4)`).run();
+  db.prepare(`INSERT INTO games (id, day, state, home, away) VALUES (501,'2026-10-21','FINAL','NOB','XYZ')`).run();
+  assert.equal(game.playerDetail(uid, 7102).missedLast, false); // no boxscore stored for that game: we do not know
 });

@@ -36,3 +36,12 @@ export function summarize(s) {
   if (s.pim) parts.push(`${s.pim} Strafmin.`);
   return parts.join(', ') || 'kein Punkt';
 }
+
+/** Fantasy points of a whole season from NHL season totals (blocked shots are not in the NHL season table). */
+export function seasonPoints(t) {
+  const c = SCORING;
+  return Math.round(
+    (t.goals || 0) * c.goal + (t.assists || 0) * c.assist + (t.shots || 0) * c.shot + (t.pim || 0) * c.pim +
+    (t.plus_minus || 0) * c.plusMinus + (t.saves || 0) * c.save + (t.goals_against || 0) * c.goalAgainst +
+    (t.wins || 0) * c.win + (t.shutouts || 0) * c.shutout);
+}

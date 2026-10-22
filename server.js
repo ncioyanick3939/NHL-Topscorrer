@@ -4,7 +4,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { extname, join } from 'node:path';
 import * as game from './game.js';
-import { startScheduler } from './nhl.js';
+import { startScheduler, getGameLog } from './nhl.js';
 
 const ROOT = new URL('.', import.meta.url).pathname;
 const PORT = Number(process.env.PORT || 3000);
@@ -104,7 +104,11 @@ async function api(req, res, url) {
     case 'POST /api/sell': return send(res, 200, game.sell(user.id, Number((await body(req)).playerId)));
   }
   const m = url.pathname.match(/^\/api\/players\/(\d+)$/);
-  if (m && req.method === 'GET') return send(res, 200, game.playerDetail(user.id, Number(m[1])));
+  if (m && req.method === 'GET') {
+    const detail = game.playerDetail(user.id, Number(m[1]));
+    detail.recent = await getGameLog(detail.id); // real last games from the NHL, null if unavailable
+    return send(res, 200, detail);
+  }
   throw new game.HttpError(404, 'Nicht gefunden.');
 }
 

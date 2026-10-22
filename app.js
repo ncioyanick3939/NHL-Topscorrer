@@ -81,7 +81,7 @@ function injuryBadge(p) {
     const out = p.injury.status === 'out';
     return `<span class="lock" style="background:${out ? 'var(--down-bg)' : 'rgba(246,205,69,.18)'};color:${out ? 'var(--down)' : 'var(--yellow)'}">${out ? 'Verletzt' : 'Fraglich'}${p.injury.text ? ' · ' + esc(p.injury.text) : ''}</span>`;
   }
-  if (p.missedLast) return '<span class="lock">Letztes Spiel verpasst</span>';
+  if (p.missedLast) return '<span class="lock">Im letzten Spiel nicht dabei</span>';
   return '';
 }
 
@@ -113,7 +113,7 @@ async function openPlayer(id) {
   const injBlock = d.injury
     ? `<div class="chart" style="border:1px solid ${d.injury.status === 'out' ? 'var(--down)' : 'var(--yellow)'}"><b class="${d.injury.status === 'out' ? 'down' : ''}">${d.injury.status === 'out' ? 'Verletzt' : 'Fraglich'}</b><div style="color:var(--mute);font-size:13px;margin-top:4px">${esc(d.injury.text || '')}${d.injury.returnDate ? ' · Rückkehr ca. ' + esc(d.injury.returnDate) : ''}</div></div>`
     : d.missedLast
-      ? '<div class="chart"><b>Letztes Spiel verpasst</b><div style="color:var(--mute);font-size:13px;margin-top:4px">Dieser Spieler stand im letzten Spiel seines Teams nicht im Einsatz (verletzt, überzählig oder abwesend). Der Grund ist nicht bekannt.</div></div>'
+      ? '<div class="chart"><b>Im letzten Spiel nicht dabei</b><div style="color:var(--mute);font-size:13px;margin-top:4px">Dieser Spieler stand im letzten Spiel seines Teams nicht im Einsatz (verletzt, überzählig oder abwesend). Der Grund ist nicht bekannt.</div></div>'
       : '';
   const lockInfo = d.locked ? '<p class="note" style="margin:8px 0 0">Gesperrt: Das Team spielt heute oder der Tag ist noch nicht abgeschlossen. Am nächsten Morgen ist der neue Preis da.</p>' : '';
   const live = d.live ? `<div class="chart"><b>Heute live: ${d.live.pts} Punkte</b><div class="meta" style="color:var(--mute);font-size:13px;margin-top:4px">${d.live.goals} Tore, ${d.live.assists} Assists, ${d.live.shots} Schüsse. Voraussichtlicher Preis morgen: <b>${fmt(d.tomorrow)}</b></div></div>` : '';
@@ -123,10 +123,12 @@ async function openPlayer(id) {
       <button class="close" data-close aria-label="Schliessen">✕</button></div>
     <div class="grid4"><div><b>${fmt(d.points)}</b><span>Punkte</span></div><div><b>${d.games}</b><span>Spiele</span></div><div><b>${d.games ? Math.round(d.points / d.games) : 0}</b><span>Ø Punkte</span></div><div><b class="${gain == null ? '' : gain >= 0 ? 'up' : 'down'}">${gain == null ? '–' : (gain >= 0 ? '+' : '−') + fmt(Math.abs(gain))}</b><span>Gewinn</span></div>
       <div><b>${d.goals}</b><span>Tore</span></div><div><b>${d.assists}</b><span>Assists</span></div><div><b>${d.plusMinus > 0 ? '+' : ''}${d.plusMinus}</b><span>+/−</span></div><div><b>${d.shots}</b><span>Schüsse</span></div>
-      <div><b>${d.blocked}</b><span>Geblockt</span></div><div><b>${d.pim}</b><span>Strafmin.</span></div><div><b>${d.wins}</b><span>Siege</span></div><div><b>${d.number ?? '–'}</b><span>Nummer</span></div></div>
+      <div><b>${d.todayPts}</b><span>Heute live</span></div><div><b>${d.pim}</b><span>Strafmin.</span></div><div><b>${d.wins}</b><span>Siege</span></div><div><b>${d.number ?? '–'}</b><span>Nummer</span></div></div>
     ${injBlock}${live}${bigChart(d.hist)}
-    <h2 style="margin-top:8px">Letzte Spieltage</h2>
-    ${d.log.length ? `<ul class="log">${d.log.map((l) => `<li><div>${esc(l.day)}<small>${esc(l.summary || '')}</small></div><div style="text-align:right"><b>${l.pts > 0 ? '+' : ''}${l.pts} Pkt</b><small>${fmt(l.price)}</small></div></li>`).join('')}</ul>` : '<div class="empty">Noch keine abgeschlossenen Spieltage.</div>'}
+    <h2 style="margin-top:8px">Letzte Spiele <small>echte NHL-Daten</small></h2>
+    ${d.recent && d.recent.length ? `<ul class="log">${d.recent.map((g) => `<li><div>${esc(g.date)} · ${g.home ? 'vs' : '@'} ${esc(g.opp)}<small>${esc(g.text)}</small></div><div style="text-align:right"><b>${g.pts > 0 ? '+' : ''}${g.pts} Pkt</b></div></li>`).join('')}</ul>` : '<div class="empty">Die letzten Spiele konnten gerade nicht geladen werden.</div>'}
+    <h2 style="margin-top:8px">Preisänderungen <small>seit Start der App</small></h2>
+    ${d.log.length ? `<ul class="log">${d.log.map((l) => `<li><div>${esc(l.day)}<small>${esc(l.summary || '')}</small></div><div style="text-align:right"><b>${l.pts > 0 ? '+' : ''}${l.pts} Pkt</b><small>${fmt(l.price)}</small></div></li>`).join('')}</ul>` : '<div class="empty">Noch keine Preisänderung. Sie kommt nach dem ersten abgeschlossenen Spieltag.</div>'}
     ${action}${lockInfo}</div>`;
   const close = () => { bg.remove(); document.removeEventListener('keydown', esc_); };
   const esc_ = (e) => { if (e.key === 'Escape') close(); };

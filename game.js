@@ -121,10 +121,15 @@ function shape(p, owned) {
   };
 }
 
-/** 1 if the team played its last finished game and this player was not in it (injured, scratched, or away). */
-const LAST_DAY = `(SELECT MAX(g.day) FROM games g WHERE (g.home = p.team OR g.away = p.team) AND g.state IN ('FINAL','OFF'))`;
-const MISSED_SQL = `CASE WHEN p.games > 0 AND ${LAST_DAY} IS NOT NULL
-  AND NOT EXISTS (SELECT 1 FROM day_stats ds WHERE ds.player_id = p.id AND ds.day = ${LAST_DAY}) THEN 1 ELSE 0 END`;
+/**
+ * 1 if the player (a skater, not a goalie: backups often sit) was not in the last finished game of his team,
+ * and only when that game's boxscore is stored, so we know who did play.
+ */
+const LAST_GAME = `(SELECT g.id FROM games g WHERE (g.home = p.team OR g.away = p.team) AND g.state IN ('FINAL','OFF')
+  ORDER BY g.day DESC, g.start_utc DESC LIMIT 1)`;
+const MISSED_SQL = `CASE WHEN p.pos != 'G' AND p.games > 0 AND ${LAST_GAME} IS NOT NULL
+  AND EXISTS (SELECT 1 FROM day_stats d WHERE d.game_id = ${LAST_GAME})
+  AND NOT EXISTS (SELECT 1 FROM day_stats d WHERE d.game_id = ${LAST_GAME} AND d.player_id = p.id) THEN 1 ELSE 0 END`;
 
 const SELECT_PLAYER = `SELECT p.*, ${LOCKED_SQL} AS locked, ${todayPtsSql} AS today_pts, ${MISSED_SQL} AS missed_last,
   (SELECT expires_at FROM market_listings m WHERE m.player_id = p.id) AS listing_expires FROM players p`;

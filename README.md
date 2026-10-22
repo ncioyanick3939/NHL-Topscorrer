@@ -36,10 +36,14 @@ Kader von Hand neu laden: `npm run sync`. Verletzungen von Hand laden: `npm run 
 
 Alle Werte stehen in `config.js`. Das Startteam bekommt jeder einmal beim ersten Login, auch Konten, die schon vorher erstellt wurden und noch keinen Kader haben.
 
+## Statistiken
+
+Spiele, Tore, Assists, Plus/Minus, Schüsse und Strafminuten sind die **echten Saisonwerte der NHL**. Sie werden alle 3 Stunden und nach jedem Tagesabschluss neu geladen (`npm run stats` von Hand). Die Saisonpunkte werden aus diesen Werten mit den Punktewerten berechnet. Geblockte Schüsse fehlen in der NHL-Saisontabelle, deshalb sind die Saisonpunkte etwas niedriger als die Tagespunkte. Auf der Spielerseite stehen die letzten 5 Spiele direkt von der NHL.
+
 ## Verletzungen und Abwesenheit
 
 - **Verletzt oder fraglich:** Die NHL-API hat keine Verletzungsdaten. Deshalb liest der Server stündlich eine öffentliche Verletztenliste (ESPN) und ordnet die Spieler über den Namen zu. Das ist eine Schätzung: Bei zwei Spielern mit gleichem Namen wird keiner markiert. Verletzte ("Out") Spieler verschwinden vom Markt und kommen nicht ins Startteam. Beim Kauf eines verletzten oder fraglichen Spielers fragt die App nach.
-- **Letztes Spiel verpasst:** Stand ein Spieler im letzten Spiel seines Teams nicht im Einsatz, zeigt die App das an. Der Grund (verletzt, überzählig, abwesend) ist dann nicht bekannt.
+- **Im letzten Spiel nicht dabei:** Stand ein Feldspieler im letzten Spiel seines Teams nicht im Einsatz, zeigt die App das an, aber nur wenn dieses Spiel schon ausgewertet ist. Torhüter bekommen den Hinweis nie (Ersatztorhüter sitzen oft). Der Grund (verletzt, überzählig, abwesend) ist nicht bekannt.
 - Von Hand laden: `npm run injuries`. Klappt der Abruf nicht, funktioniert die App trotzdem, nur ohne Verletzungsinfos.
 
 ## Punkte
