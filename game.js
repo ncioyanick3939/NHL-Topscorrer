@@ -155,10 +155,35 @@ export function playerDetail(userId, id) {
   const p = db.prepare(`${SELECT_PLAYER} WHERE p.id = ?`).get(id);
   if (!p) throw new HttpError(404, 'Spieler nicht gefunden.');
   const log = db.prepare('SELECT day, price, pts, summary FROM price_history WHERE player_id = ? ORDER BY day DESC LIMIT 10').all(id);
+  const transfers = db.prepare(`SELECT t.kind, t.price, t.at, u.name AS user FROM transfers t JOIN users u ON u.id = t.user_id
+    WHERE t.player_id = ? ORDER BY t.id DESC LIMIT 8`).all(id);
   const live = db.prepare(`SELECT * FROM day_stats WHERE player_id = ? AND day NOT IN (SELECT day FROM days)`).get(id) ?? null;
   const own = db.prepare('SELECT bought_for FROM roster WHERE user_id = ? AND player_id = ?').get(userId, id);
   const full = db.prepare('SELECT shots, blocked, pim, plus_minus, wins FROM players WHERE id = ?').get(id);
-  return { ...shape(p, ownedSet(userId)), ...full, plusMinus: full.plus_minus, boughtFor: own?.bought_for ?? null, log, live };
+  return { ...shape(p, ownedSet(userId)), ...full, plusMinus: full.plus_minus, boughtFor: own?.bought_for ?? null, log, live, transfers };
+}
+
+function logTransfer(userId, playerId, kind, price) {
+  db.prepare('INSERT INTO transfers (user_id, player_id, kind, price, at) VALUES (?,?,?,?,?)').run(userId, playerId, kind, price, new Date().toISOString());
+}
+
+/** League ticker: the latest buys and sells of all managers. */
+export function ticker(limit = 50) {
+  return db.prepare(`SELECT t.kind, t.price, t.at, u.name AS user, p.id AS playerId, p.first, p.last
+    FROM transfers t JOIN users u ON u.id = t.user_id JOIN players p ON p.id = t.player_id
+    ORDER BY t.id DESC LIMIT ?`).all(Math.min(Number(limit) || 50, 100))
+    .map((r) => ({ kind: r.kind, price: r.price, at: r.at, user: r.user, playerId: r.playerId, player: `${r.first} ${r.last}`.trim() }));
+}
+
+/** Best players of the season by fantasy points, optionally by position. */
+export function topscorers(userId, { pos, limit = 25 } = {}) {
+  const where = ['p.games > 0'];
+  const args = [];
+  if (pos && ['F', 'D', 'G'].includes(pos)) { where.push('p.pos = ?'); args.push(pos); }
+  const rows = db.prepare(`${SELECT_PLAYER} WHERE ${where.join(' AND ')} ORDER BY p.fantasy_pts DESC, p.id LIMIT ?`)
+    .all(...args, Math.min(Number(limit) || 25, 100));
+  const owned = ownedSet(userId);
+  return rows.map((p) => shape(p, owned));
 }
 
 export function buy(userId, playerId) {
@@ -179,6 +204,7 @@ export function buy(userId, playerId) {
     }
     db.prepare('UPDATE users SET balance = balance - ? WHERE id = ?').run(p.price, userId);
     db.prepare('INSERT INTO roster (user_id, player_id, bought_for) VALUES (?,?,?)').run(userId, playerId, p.price);
+    logTransfer(userId, playerId, 'buy', p.price);
     return { price: p.price };
   });
 }
@@ -191,6 +217,7 @@ export function sell(userId, playerId) {
     if (p.locked) throw new HttpError(409, 'Gesperrt: Das Team spielt heute oder der Tag ist noch nicht abgeschlossen.');
     db.prepare('DELETE FROM roster WHERE user_id = ? AND player_id = ?').run(userId, playerId);
     db.prepare('UPDATE users SET balance = balance + ? WHERE id = ?').run(p.price, userId);
+    logTransfer(userId, playerId, 'sell', p.price);
     return { price: p.price };
   });
 }
@@ -227,7 +254,10 @@ export function liveView(userId) {
     .map((r) => ({ id: r.player_id, name: `${r.first} ${r.last}`.trim(), team: r.team, pos: r.pos, pts: r.pts, goals: r.goals, assists: r.assists, headshot: r.headshot, mine: mine.has(r.player_id) }));
   const mineRows = open.filter((r) => mine.has(r.player_id)).sort((a, b) => b.pts - a.pts)
     .map((r) => ({ id: r.player_id, name: `${r.first} ${r.last}`.trim(), team: r.team, pos: r.pos, pts: r.pts, goals: r.goals, assists: r.assists, headshot: r.headshot, tomorrow: nextPrice(r.price, r.pts), price: r.price }));
+  const next = db.prepare(`SELECT MIN(start_utc) AS t FROM games WHERE state IN ('FUT','PRE') AND start_utc > ?`).get(new Date().toISOString());
   return {
+    nextStart: next?.t ?? null,
+    openDay: games.find((x) => x.state !== 'FINAL' && x.state !== 'OFF')?.day ?? games.at(-1)?.day ?? null,
     games: games.map((g) => ({ id: g.id, day: g.day, start: g.start_utc, state: g.state, home: g.home, away: g.away, homeScore: g.home_score, awayScore: g.away_score })),
     top, mine: mineRows, myPoints: mineRows.reduce((s, r) => s + r.pts, 0),
   };

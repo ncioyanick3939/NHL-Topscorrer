@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { extname, join } from 'node:path';
 import * as game from './game.js';
+import { SCORING, PRICE, RULES } from './config.js';
 import { startScheduler, getGameLog } from './nhl.js';
 
 const ROOT = new URL('.', import.meta.url).pathname;
@@ -99,6 +100,9 @@ async function api(req, res, url) {
     case 'GET /api/team': return send(res, 200, game.myTeam(user.id));
     case 'GET /api/league': return send(res, 200, game.league(user.id));
     case 'GET /api/live': return send(res, 200, game.liveView(user.id));
+    case 'GET /api/rules': return send(res, 200, { SCORING, PRICE, RULES });
+    case 'GET /api/ticker': return send(res, 200, game.ticker());
+    case 'GET /api/topscorers': return send(res, 200, game.topscorers(user.id, { pos: q.get('pos') }));
     case 'GET /api/moves': return send(res, 200, game.recentMoves());
     case 'POST /api/buy': return send(res, 200, game.buy(user.id, Number((await body(req)).playerId)));
     case 'POST /api/sell': return send(res, 200, game.sell(user.id, Number((await body(req)).playerId)));

@@ -250,3 +250,22 @@ test('"not in the last game" is never shown for goalies or when that game was no
   db.prepare(`INSERT INTO games (id, day, state, home, away) VALUES (501,'2026-10-21','FINAL','NOB','XYZ')`).run();
   assert.equal(game.playerDetail(uid, 7102).missedLast, false); // no boxscore stored for that game: we do not know
 });
+
+test('league ticker, topscorers list and rules are served', async () => {
+  const { db } = await import('./db.js');
+  const game = await import('./game.js');
+  db.prepare("INSERT OR IGNORE INTO players (id, team, first, last, pos, price, prev_price, games, fantasy_pts) VALUES (990001,'TOR','Tick','Er','F',100000,100000,5,321)").run();
+  db.prepare("INSERT OR IGNORE INTO users (name, salt, pw_hash, balance) VALUES ('tickuser','s','x',1000000)").run();
+  const uid = db.prepare("SELECT id FROM users WHERE name='tickuser'").get().id;
+  db.prepare("INSERT OR IGNORE INTO market_listings (player_id, listed_at, expires_at) VALUES (990001, ?, ?)").run(new Date().toISOString(), new Date(Date.now() + 3_600_000).toISOString());
+  game.buy(uid, 990001);
+  game.sell(uid, 990001);
+  const t = game.ticker();
+  assert.equal(t[0].kind, 'sell');
+  assert.equal(t[1].kind, 'buy');
+  assert.equal(t[1].player, 'Tick Er');
+  assert.ok(game.topscorers(uid, {}).some((p) => p.id === 990001));
+  assert.ok(game.topscorers(uid, { pos: 'D' }).every((p) => p.pos === 'D'));
+  assert.ok(game.playerDetail(uid, 990001).transfers.length >= 2);
+  assert.ok('nextStart' in game.liveView(uid));
+});

@@ -116,6 +116,17 @@ CREATE TABLE IF NOT EXISTS market_listings (
   expires_at TEXT NOT NULL         -- ISO time
 );
 
+-- Every buy and sell, for the league ticker and the transfer history of a player.
+CREATE TABLE IF NOT EXISTS transfers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  player_id INTEGER NOT NULL REFERENCES players(id),
+  kind TEXT NOT NULL,              -- 'buy' | 'sell'
+  price INTEGER NOT NULL,
+  at TEXT NOT NULL                 -- ISO time
+);
+CREATE INDEX IF NOT EXISTS transfers_at ON transfers(at);
+
 CREATE TABLE IF NOT EXISTS meta (
   key TEXT PRIMARY KEY,
   value TEXT
