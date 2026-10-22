@@ -155,14 +155,17 @@ async function openPlayer(id) {
     <div class="wmlogo">${logo(d.team)}</div><div class="shead">${logo(d.team)}<div class="sname">${esc(d.first)} ${esc(d.last)}</div><div class="ptag">#${d.number ?? '–'} · ${POS[d.pos]} · ${esc(d.team)}</div></div>
     <div class="photo"><div class="wm">${esc(d.number ?? '')}</div>${avatar(d, true)}</div>
     <div class="big3"><div><b>${fmt(d.points)}</b><span>Punkte</span></div><div><b>${avg(d)}</b><span>Ø Punkte</span></div><div><b>${fmt(d.price)}</b><span>Marktwert ${pill(d)}</span></div></div>
-    <div class="big3 small"><div><b>${d.boughtFor != null ? fmt(d.boughtFor) : '–'}</b><span>Gekauft für</span></div><div><b class="${gain == null ? '' : gain >= 0 ? 'up' : 'down'}">${gain == null ? '–' : sign(gain)}</b><span>Gewinn</span></div><div><b>${d.todayPts}</b><span>Heute live</span></div></div>
     <div class="grid4"><div><b>${d.games}</b><span>Spiele</span></div><div><b>${d.goals}</b><span>Tore</span></div><div><b>${d.assists}</b><span>Assists</span></div><div><b>${d.plusMinus > 0 ? '+' : ''}${d.plusMinus}</b><span>+/−</span></div>
       <div><b>${d.shots}</b><span>Schüsse</span></div><div><b>${d.pim}</b><span>Strafmin.</span></div><div><b>${d.wins}</b><span>Siege</span></div><div><b>${d.blocked ?? 0}</b><span>Geblockt</span></div></div>
-    ${injBlock}${live}${bigChart(d.hist)}
-    ${gamesHtml(d.recent, d.recentError)}
+    ${injBlock}${live}
+    ${gamesHtml(d.recent, d.recentError, d)}
+    <div class="big3 small"><div><b>${d.boughtFor != null ? fmt(d.boughtFor) : '–'}</b><span>Gekauft für</span></div><div><b class="${gain == null ? '' : gain >= 0 ? 'up' : 'down'}">${gain == null ? '–' : sign(gain)}</b><span>Gewinn</span></div><div><b>${fmt(d.price)} <i class="${cls(d)}">${arrow(cls(d))}</i></b><span>Marktwert</span></div></div>
+    ${priceChart(d)}
+    ${transferTimeline(d)}
+    ${gamesListHtml(d.recent)}
     <h2>Preisänderungen</h2>
     ${d.log.length ? `<ul class="log">${d.log.map((l) => `<li><div>${esc(l.day)}<small>${esc(l.summary || '')}</small></div><div style="text-align:right"><b>${l.pts > 0 ? '+' : ''}${l.pts} Pkt</b><small>${fmt(l.price)}</small></div></li>`).join('')}</ul>` : '<div class="empty">Noch keine Preisänderung. Sie kommt nach dem ersten abgeschlossenen Spieltag.</div>'}
-    ${trans}${action}${lockInfo}</div>`;
+    ${action}${lockInfo}</div>`;
   const close = () => { bg.remove(); document.removeEventListener('keydown', esc_); };
   const esc_ = (e) => { if (e.key === 'Escape') close(); };
   document.addEventListener('keydown', esc_);
@@ -176,16 +179,62 @@ async function openPlayer(id) {
   document.body.append(bg);
 }
 
-/** Points per game: bar chart (oldest left) and a numbered list (newest first), like Topscorers. */
+/** Points per game like Topscorers: bars of the last games with both logos and the score, season block on the right. */
 const res = (g) => (g.result ? `<span class="res ${g.result.win ? 'win' : 'loss'}">${g.result.own}:${g.result.opp}${g.result.ot ? ' n.V.' : ''} ${g.result.win ? 'S' : 'N'}</span>` : '');
-function gamesHtml(log, err) {
-  if (!log || !log.length) return `<h2>Spiele <small>echte NHL-Daten</small></h2><div class="empty">${log ? 'Noch keine Spiele in dieser Saison.' : 'Die Spiele konnten gerade nicht geladen werden.'}${err ? `<br><small>${esc(err)}</small>` : ''}</div>`;
+const dm = (s) => { const [y, m, d] = String(s).split('-'); return d && m ? `${d}.${m}.` : s; };
+function gamesHtml(log, err, d) {
+  if (!log || !log.length) return `<div class="empty">${log ? 'Noch keine Spiele in dieser Saison.' : 'Die Spiele konnten gerade nicht geladen werden.'}${err ? `<br><small>${esc(err)}</small>` : ''}</div>`;
+  const last = log.slice(0, 6).reverse(); // oldest on the left
+  const mx = Math.max(1, ...last.map((g) => Math.abs(g.pts)));
+  const av = d.games ? d.points / d.games : 0;
+  const cols = last.map((g) => {
+    const h = Math.max(10, Math.round(Math.abs(g.pts) / mx * 96));
+    const hot = g.pts > av * 1.15;
+    const left = g.home ? g.team : g.opp, right = g.home ? g.opp : g.team;
+    const r = g.result;
+    const score = r ? (g.home ? `${r.own}:${r.opp}` : `${r.opp}:${r.own}`) : '';
+    return `<div class="gcol"><div class="gbar"><i class="${hot ? 'hot' : ''}${g.pts < 0 ? ' neg' : ''}" style="height:${h}px"></i></div><b>${g.pts}</b><div class="glogos">${logo(left)}${logo(right)}</div><small>${score}</small></div>`;
+  }).join('');
+  return `<div class="gwrap"><div class="gcols">${cols}</div><div class="season"><span>Saison 26/27</span><b>${fmt(d.points)}</b><small>Punkte</small><b>${avg(d)}</b><small>Ø</small><b>${d.games}</b><small>Spiele</small></div></div>`;
+}
+function gamesListHtml(log) {
+  if (!log || !log.length) return '';
   const chrono = [...log].reverse();
-  const max = Math.max(1, ...chrono.map((g) => Math.abs(g.pts)));
-  const dm = (s) => { const [y, m, d] = String(s).split('-'); return d && m ? `${d}.${m}.` : s; };
-  const bars = chrono.map((g) => `<div class="pbar"><b>${g.pts}</b><i style="height:${Math.max(3, Math.round(Math.abs(g.pts) / max * 70))}px" class="${g.pts < 0 ? 'neg' : ''}"></i><span>${dm(g.date)}</span><span>${g.home ? 'vs' : '@'} ${esc(g.opp)}</span></div>`).join('');
   const list = log.map((g, k) => `<li><div><b>${chrono.length - k}. Spiel</b> · ${g.home ? 'vs' : '@'} ${esc(g.opp)} ${res(g)}<small>${dm(g.date)} · ${esc(g.text)}</small></div><div style="text-align:right"><b>${g.pts} Pkt</b></div></li>`).join('');
-  return `<h2>Punkte pro Spiel <small>${chrono.length} Spiele</small></h2><div class="pbars">${bars}</div><ul class="log">${list}</ul>`;
+  return `<h2>Punkte pro Spiel <small>${chrono.length} Spiele</small></h2><ul class="log">${list}</ul>`;
+}
+
+/** Price curve with axis labels, like Topscorers. */
+function priceChart(d) {
+  const h = d.histFull || [];
+  if (h.length < 2) return '<div class="chart"><div class="empty" style="padding:8px">Noch keine Preisgeschichte. Der Preis ändert sich nach dem ersten abgeschlossenen Spieltag.</div></div>';
+  const vals = h.map((x) => x.price);
+  const lo = Math.min(...vals), hi = Math.max(...vals), span = hi - lo || 1;
+  const W = 340, H = 140, L = 6, R = 44, T = 10, B = 22;
+  const x = (i) => L + (i / (h.length - 1)) * (W - L - R);
+  const y = (v) => T + (1 - (v - lo) / span) * (H - T - B);
+  const pts = h.map((p, i) => `${x(i).toFixed(1)},${y(p.price).toFixed(1)}`).join(' ');
+  const k = (v) => `${Math.round(v / 1000)}k`;
+  const ticks = [hi, (hi + lo) / 2, lo];
+  const grid = ticks.map((t) => `<line x1="${L}" x2="${W - R}" y1="${y(t).toFixed(1)}" y2="${y(t).toFixed(1)}" stroke="rgba(255,255,255,.08)"/><text x="${W - 2}" y="${(y(t) + 4).toFixed(1)}" text-anchor="end" class="ax">${k(t)}</text>`).join('');
+  const lbl = [0, Math.floor((h.length - 1) / 2), h.length - 1].map((i, n) => `<text x="${x(i).toFixed(1)}" y="${H - 4}" text-anchor="${n === 0 ? 'start' : n === 2 ? 'end' : 'middle'}" class="ax">${dm(h[i].day)}</text>`).join('');
+  const c = vals[vals.length - 1] >= vals[0] ? 'var(--yellow)' : 'var(--down)';
+  const lx = x(h.length - 1), ly = y(vals[vals.length - 1]);
+  return `<div class="chart"><svg viewBox="0 0 ${W} ${H}" aria-label="Preisverlauf">${grid}<polyline points="${pts}" fill="none" stroke="${c}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/><circle cx="${lx.toFixed(1)}" cy="${ly.toFixed(1)}" r="4" fill="${c}"/>${lbl}</svg></div>`;
+}
+
+/** Transfer history as a timeline: market, price, manager, price, manager ... */
+function transferTimeline(d) {
+  const list = [...(d.transfers || [])].reverse();
+  if (!list.length) return '';
+  const date = (iso) => { const t = new Date(iso); return `${String(t.getDate()).padStart(2, '0')}-${String(t.getMonth() + 1).padStart(2, '0')}-${t.getFullYear()}`; };
+  const node = (label, market) => `<div class="tn">${market ? '<img src="/nhl-logo.png" alt="">' : `<span class="tav">${esc(label.slice(0, 1).toUpperCase())}</span>`}<b>${esc(market ? 'Markt' : label)}</b></div>`;
+  const parts = [node('', true)];
+  for (const t of list) {
+    parts.push(`<div class="tl"><span>⇄</span><b>${fmt(t.price)}</b><small>${date(t.at)}</small></div>`);
+    parts.push(t.kind === 'buy' ? node(t.user, false) : node('', true));
+  }
+  return `<div class="thist"><div class="thead">Transfers</div><div class="trow">${parts.join('')}</div></div>`;
 }
 
 /** Market trend card: last change, live forecast, biggest movers. */

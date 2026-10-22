@@ -199,7 +199,8 @@ export function playerDetail(userId, id) {
   const live = db.prepare(`SELECT * FROM day_stats WHERE player_id = ? AND day NOT IN (SELECT day FROM days)`).get(id) ?? null;
   const own = db.prepare('SELECT bought_for FROM roster WHERE user_id = ? AND player_id = ?').get(userId, id);
   const full = db.prepare('SELECT shots, blocked, pim, plus_minus, wins FROM players WHERE id = ?').get(id);
-  return { ...shape(p, ownedSet(userId)), myBid: myBids(userId).get(id) ?? null, ...full, plusMinus: full.plus_minus, boughtFor: own?.bought_for ?? null, log, live, transfers };
+  return { ...shape(p, ownedSet(userId)), myBid: myBids(userId).get(id) ?? null, ...full, plusMinus: full.plus_minus, boughtFor: own?.bought_for ?? null, log, live, transfers,
+    histFull: db.prepare('SELECT day, price FROM price_history WHERE player_id = ? ORDER BY day ASC LIMIT 120').all(id) };
 }
 
 /** League ticker: the latest buys and sells of all managers. */
