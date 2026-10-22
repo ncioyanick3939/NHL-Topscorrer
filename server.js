@@ -106,6 +106,7 @@ async function api(req, res, url) {
     case 'GET /api/topscorers': return send(res, 200, game.topscorers(user.id, { pos: q.get('pos') }));
     case 'GET /api/moves': return send(res, 200, game.recentMoves());
     case 'POST /api/buy': return send(res, 200, game.buy(user.id, Number((await body(req)).playerId)));
+    case 'POST /api/lineup': { const b = await body(req); return send(res, 200, game.setLineup(user.id, Number(b.playerId), Number(b.line))); }
     case 'POST /api/sell': return send(res, 200, game.sell(user.id, Number((await body(req)).playerId)));
   }
   const m = url.pathname.match(/^\/api\/players\/(\d+)$/);

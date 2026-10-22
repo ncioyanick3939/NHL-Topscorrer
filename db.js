@@ -141,6 +141,7 @@ function addColumn(table, name, ddl) {
 addColumn('players', 'injury_status', 'TEXT');   // 'out' | 'dtd' | NULL
 addColumn('players', 'injury_text', 'TEXT');
 addColumn('players', 'injury_return', 'TEXT');
+addColumn('roster', 'lineup', 'INTEGER NOT NULL DEFAULT -1'); // -1 not placed, 0 bench, 1-3 line, 9 goalie
 addColumn('users', 'starter_given', 'INTEGER NOT NULL DEFAULT 0');
 
 export function getMeta(key) {

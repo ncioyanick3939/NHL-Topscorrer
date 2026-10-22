@@ -1,3 +1,4 @@
+import { autoFill, autoFillAll, slotFits, GOALIE_SLOT } from './lineup.js';
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { db, tx } from './db.js';
 import { PRICE, RULES } from './config.js';
@@ -224,11 +225,28 @@ export function sell(userId, playerId) {
 
 /* ---------- Team, league, live ---------- */
 
+/** Put a player into a line (1-3, goalie: 9) or on the bench (0). Locked players cannot be moved. */
+export function setLineup(userId, playerId, line) {
+  autoFill(userId);
+  return tx(() => {
+    const p = db.prepare(`${SELECT_PLAYER} JOIN roster r ON r.player_id = p.id AND r.user_id = ? WHERE p.id = ?`).get(userId, playerId);
+    if (!p) throw new HttpError(404, 'Dieser Spieler gehört dir nicht.');
+    const ok = line === 0 || (p.pos === 'G' ? line === GOALIE_SLOT : [1, 2, 3].includes(line));
+    if (!ok) throw new HttpError(400, 'Ungültige Position.');
+    if (p.locked) throw new HttpError(409, 'Gesperrt: Das Team spielt heute, die Aufstellung ist bis zum Tagesabschluss fix.');
+    if (!slotFits(userId, p.pos, line, playerId)) throw new HttpError(409, 'Diese Linie ist auf der Position schon voll.');
+    db.prepare('UPDATE roster SET lineup = ? WHERE user_id = ? AND player_id = ?').run(line, userId, playerId);
+    return { ok: true };
+  });
+}
+
 export function myTeam(userId) {
+  autoFill(userId);
   const rows = db.prepare(`${SELECT_PLAYER} JOIN roster r ON r.player_id = p.id WHERE r.user_id = ? ORDER BY p.price DESC`).all(userId);
   const owned = ownedSet(userId);
   const bought = new Map(db.prepare('SELECT player_id, bought_for FROM roster WHERE user_id = ?').all(userId).map((r) => [r.player_id, r.bought_for]));
-  const players = rows.map((p) => ({ ...shape(p, owned), boughtFor: bought.get(p.id) }));
+  const lineup = new Map(db.prepare('SELECT player_id, lineup FROM roster WHERE user_id = ?').all(userId).map((r) => [r.player_id, r.lineup]));
+  const players = rows.map((p) => ({ ...shape(p, owned), boughtFor: bought.get(p.id), lineup: lineup.get(p.id) ?? 0 }));
   const u = db.prepare('SELECT balance, points FROM users WHERE id = ?').get(userId);
   const value = players.reduce((s, p) => s + p.price, 0);
   const invested = players.reduce((s, p) => s + p.boughtFor, 0);
@@ -236,16 +254,19 @@ export function myTeam(userId) {
 }
 
 export function league(userId) {
+  autoFillAll();
   const rows = db.prepare(`SELECT u.id, u.name, u.balance, u.points,
       COALESCE((SELECT SUM(p.price) FROM roster r JOIN players p ON p.id = r.player_id WHERE r.user_id = u.id), 0) AS value,
       COALESCE((SELECT SUM(ds.pts) FROM roster r JOIN day_stats ds ON ds.player_id = r.player_id
-                WHERE r.user_id = u.id AND ds.day NOT IN (SELECT day FROM days)), 0) AS live
+                WHERE r.user_id = u.id AND r.lineup > 0 AND ds.day NOT IN (SELECT day FROM days)), 0) AS live
     FROM users u`).all();
   return rows.map((r) => ({ id: r.id, name: r.name, wealth: r.balance + r.value, value: r.value, points: r.points + r.live, live: r.live, me: r.id === userId }))
     .sort((a, b) => b.points - a.points || b.wealth - a.wealth);
 }
 
 export function liveView(userId) {
+  autoFill(userId);
+  const inLineup = new Set(db.prepare('SELECT player_id FROM roster WHERE user_id = ? AND lineup > 0').all(userId).map((r) => r.player_id));
   const games = db.prepare(`SELECT * FROM games WHERE day NOT IN (SELECT day FROM days) OR day >= date('now','-1 day') ORDER BY day, start_utc`).all();
   const open = db.prepare(`SELECT ds.*, p.first, p.last, p.team, p.price, p.headshot, p.pos FROM day_stats ds JOIN players p ON p.id = ds.player_id
                            WHERE ds.day NOT IN (SELECT day FROM days)`).all();
@@ -253,13 +274,13 @@ export function liveView(userId) {
   const top = [...open].sort((a, b) => b.pts - a.pts).slice(0, 10)
     .map((r) => ({ id: r.player_id, name: `${r.first} ${r.last}`.trim(), team: r.team, pos: r.pos, pts: r.pts, goals: r.goals, assists: r.assists, headshot: r.headshot, mine: mine.has(r.player_id) }));
   const mineRows = open.filter((r) => mine.has(r.player_id)).sort((a, b) => b.pts - a.pts)
-    .map((r) => ({ id: r.player_id, name: `${r.first} ${r.last}`.trim(), team: r.team, pos: r.pos, pts: r.pts, goals: r.goals, assists: r.assists, headshot: r.headshot, tomorrow: nextPrice(r.price, r.pts), price: r.price }));
+    .map((r) => ({ id: r.player_id, name: `${r.first} ${r.last}`.trim(), team: r.team, pos: r.pos, pts: r.pts, goals: r.goals, assists: r.assists, headshot: r.headshot, tomorrow: nextPrice(r.price, r.pts), price: r.price, inLineup: inLineup.has(r.player_id) }));
   const next = db.prepare(`SELECT MIN(start_utc) AS t FROM games WHERE state IN ('FUT','PRE') AND start_utc > ?`).get(new Date().toISOString());
   return {
     nextStart: next?.t ?? null,
     openDay: games.find((x) => x.state !== 'FINAL' && x.state !== 'OFF')?.day ?? games.at(-1)?.day ?? null,
     games: games.map((g) => ({ id: g.id, day: g.day, start: g.start_utc, state: g.state, home: g.home, away: g.away, homeScore: g.home_score, awayScore: g.away_score })),
-    top, mine: mineRows, myPoints: mineRows.reduce((s, r) => s + r.pts, 0),
+    top, mine: mineRows, myPoints: mineRows.filter((r) => r.inLineup).reduce((s, r) => s + r.pts, 0),
   };
 }
 

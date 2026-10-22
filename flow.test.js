@@ -269,3 +269,30 @@ test('league ticker, topscorers list and rules are served', async () => {
   assert.ok(game.playerDetail(uid, 990001).transfers.length >= 2);
   assert.ok('nextStart' in game.liveView(uid));
 });
+
+test('lineup: 3 lines of 3F + 2D + 1 goalie, extra players on the bench, only the lineup scores', async () => {
+  const { db } = await import('./db.js');
+  const game = await import('./game.js');
+  const { autoFillAll } = await import('./lineup.js');
+  db.prepare("INSERT OR IGNORE INTO users (name, salt, pw_hash, balance) VALUES ('lineupuser','s','x',0)").run();
+  const uid = db.prepare("SELECT id FROM users WHERE name='lineupuser'").get().id;
+  let id = 880000;
+  const add = (pos, n) => { for (let i = 0; i < n; i++, id++) {
+    db.prepare("INSERT INTO players (id, team, first, last, pos, price, prev_price) VALUES (?,?,?,?,?,100000,100000)").run(id, 'ZZZ', 'L', 'P' + id, pos);
+    db.prepare('INSERT INTO roster (user_id, player_id, bought_for) VALUES (?,?,100000)').run(uid, id); } };
+  add('F', 10); add('D', 6); add('G', 2);
+  const t = game.myTeam(uid);
+  const count = (f) => t.players.filter(f).length;
+  assert.equal(count((p) => p.lineup > 0 && p.pos === 'F'), 9);
+  assert.equal(count((p) => p.lineup > 0 && p.pos === 'D'), 6);
+  assert.equal(count((p) => p.lineup === 9), 1);
+  assert.equal(count((p) => p.lineup === 0), 2); // 1 forward + 1 goalie on the bench
+  const bench = t.players.find((p) => p.lineup === 0 && p.pos === 'F');
+  const starter = t.players.find((p) => p.lineup === 1 && p.pos === 'F');
+  assert.throws(() => game.setLineup(uid, bench.id, 1), /voll/);
+  game.setLineup(uid, starter.id, 0);
+  game.setLineup(uid, bench.id, 1);
+  assert.equal(game.myTeam(uid).players.find((p) => p.id === bench.id).lineup, 1);
+  assert.throws(() => game.setLineup(uid, bench.id, 9), /Ungültig/);
+  autoFillAll();
+});

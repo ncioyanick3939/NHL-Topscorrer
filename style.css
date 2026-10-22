@@ -184,3 +184,24 @@ h1.rt{font-family:var(--f-display);font-size:34px;text-transform:uppercase;margi
 ul.rl{list-style:none;margin:6px 0;padding:0;columns:1}
 ul.rl li{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--line);font-size:14px}
 nav.bar button{font-size:10px;padding:9px 0}nav.bar svg{width:20px;height:20px}
+
+/* lineup */
+.ice{background:radial-gradient(circle at 50% 50%,rgba(255,255,255,.05) 0 60px,transparent 61px),linear-gradient(180deg,#1b2a47,#17233b);border:1px solid var(--line);border-radius:22px;padding:18px 8px;margin-top:6px;display:grid;gap:14px}
+.lrow{display:flex;justify-content:center;gap:34px}
+.lrow.g{margin-top:6px}
+.slot{width:92px;background:none;border:0;color:var(--ink);display:grid;justify-items:center;gap:3px;cursor:pointer;position:relative;padding:0}
+.slot .av{width:58px;height:58px}
+.slot .sn{font:700 12px var(--f-display);letter-spacing:.06em;text-transform:uppercase;max-width:92px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.slot .sv{font-size:10px;color:var(--mute)}
+.slot.empty .plusc{width:58px;height:58px;border-radius:50%;border:2px dashed var(--mute);display:grid;place-items:center;font-size:28px;color:var(--mute)}
+.slot.empty .sn{color:var(--mute)}
+.sx{position:absolute;right:12px;top:0;background:var(--down);color:#fff;border-radius:50%;width:18px;height:18px;font:700 12px/18px var(--f-body);font-style:normal}
+/* tighter rows so big numbers never overflow */
+.prow{overflow:hidden;gap:10px;padding:10px}
+.prow .av{width:52px;height:52px}
+.pn{font-size:21px;overflow-wrap:break-word;word-break:normal}
+.pnums b{font-size:17px}
+.pval b{font-size:18px}
+.pright{max-width:36%}
+.pright>img{width:24px;height:24px}
+.pright .plus{width:40px;height:32px}

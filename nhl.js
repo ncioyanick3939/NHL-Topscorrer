@@ -1,3 +1,4 @@
+import { autoFillAll } from './lineup.js';
 import dns from 'node:dns';
 import { db, tx, getMeta, setMeta } from './db.js';
 import { NHL_API, NHL_TEAMS, PRICE, RULES } from './config.js';
@@ -338,9 +339,10 @@ export function finalizeDay(day) {
         .run(r.player_id, day, price, r.pts, summarize(r));
 
     }
+    autoFillAll();
     db.prepare(`INSERT INTO user_day_points (user_id, day, pts)
                 SELECT r.user_id, ?, COALESCE(SUM(ds.pts),0) FROM roster r
-                JOIN day_stats ds ON ds.player_id=r.player_id AND ds.day=? GROUP BY r.user_id`).run(day, day);
+                JOIN day_stats ds ON ds.player_id=r.player_id AND ds.day=? WHERE r.lineup > 0 GROUP BY r.user_id`).run(day, day);
     db.prepare('UPDATE users SET points = (SELECT COALESCE(SUM(pts),0) FROM user_day_points WHERE user_id=users.id)').run();
     db.prepare('INSERT INTO days (day) VALUES (?)').run(day);
   });

@@ -12,7 +12,7 @@ const TEAM_COLORS = {
 };
 const POS = { F: 'Stürmer', D: 'Verteidiger', G: 'Torhüter' };
 
-const S = { tab: 'board', sub: { league: 'rank', nhl: 'games', live: 'play' }, mode: 'buy', me: null, pos: '', sort: 'expiry', q: '', top: '', timer: null, cd: null };
+const S = { line: 1, team: null, tab: 'board', sub: { team: 'roster', league: 'rank', nhl: 'games', live: 'play' }, mode: 'buy', me: null, pos: '', sort: 'expiry', q: '', top: '', timer: null, cd: null };
 
 /* ---------- helpers ---------- */
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -198,8 +198,27 @@ const views = {
   },
 
   async team() {
-    const head = '';
+    const head = subtabs('team', [['roster', 'Kader'], ['lineup', 'Aufstellung']]);
     const t = await api('/api/team');
+    S.team = t;
+    if (S.sub.team === 'lineup') {
+      const inL = (pos, line) => t.players.filter((p) => p.pos === pos && p.lineup === line);
+      const slot = (pos, line, i) => {
+        const p = inL(pos, line)[i];
+        const posName = { F: 'Stürmer', D: 'Verteidiger', G: 'Torhüter' }[pos];
+        return p
+          ? `<button class="slot" data-slot="${p.id}" aria-label="${esc(p.first + ' ' + p.last)}">${avatar(p)}<span class="sn">${esc(p.last)}</span><span class="sv">${fmt(p.price / 1000)}k</span>${p.injury ? '<i class="sx">!</i>' : ''}</button>`
+          : `<button class="slot empty" data-add="${pos}:${line}"><span class="plusc">+</span><span class="sn">${posName}</span></button>`;
+      };
+      const L = S.line;
+      const placed = t.players.filter((p) => p.lineup > 0).length;
+      const bench = t.players.filter((p) => p.lineup === 0);
+      return `${head}<div class="balbar"><span>Aufstellung</span><b>${placed}/16</b><span>Bank ${bench.length}</span></div>
+        <div class="ice"><div class="lrow">${slot('F', L, 0)}</div><div class="lrow">${slot('F', L, 1)}${slot('F', L, 2)}</div><div class="lrow">${slot('D', L, 0)}${slot('D', L, 1)}</div><div class="lrow g">${slot('G', 9, 0)}</div></div>
+        <div class="floatseg">${seg('line', String(L), [['1', '1. Linie'], ['2', '2. Linie'], ['3', '3. Linie']])}</div>
+        ${bench.length ? `<div class="grp">Bank</div>${bench.map((p) => prow(p)).join('')}` : ''}
+        <div class="note">Nur Spieler in der Aufstellung bringen Punkte. Tippe auf ein Feld, um einen Spieler einzusetzen oder auf die Bank zu setzen. Spieler, deren Team heute spielt, sind gesperrt.</div>`;
+    }
     const bal = `<div class="balbar"><span>Kontostand</span><b>${fmt(t.balance)}</b><span>Kader ${t.players.length}/20</span></div>`;
     {
       const groups = [['G', 'Torhüter'], ['D', 'Verteidiger'], ['F', 'Stürmer']];
@@ -297,6 +316,32 @@ function header() {
 
 async function refreshMe() { S.me = await api('/api/me'); }
 
+/* ---------- lineup sheets ---------- */
+async function moveTo(playerId, line, bg) {
+  try { await api('/api/lineup', { body: { playerId, line } }); bg.remove(); render(); } catch (err) { toast(err.message); }
+}
+function slotSheet(id) {
+  const p = S.team?.players.find((x) => x.id === id);
+  if (!p) return;
+  const bg = openSheet(`<div class="shead">${avatar(p, true)}<div class="sname">${esc(p.first)} ${esc(p.last)}</div><div class="ptag">${POS[p.pos]} · ${esc(p.team)}</div></div>
+    <button class="btn sell wide" data-bench style="margin-top:18px">Auf die Bank</button>
+    <button class="btn buy wide" data-details style="margin-top:10px">Details</button>`);
+  bg.addEventListener('click', (e) => {
+    if (e.target.closest('[data-bench]')) moveTo(id, 0, bg);
+    if (e.target.closest('[data-details]')) { bg.remove(); openPlayer(id); }
+  });
+}
+function addSheet(pos, line) {
+  const bench = (S.team?.players || []).filter((p) => p.pos === pos && p.lineup === 0);
+  const bg = openSheet(`<h1 class="rt">${{ F: 'Stürmer', D: 'Verteidiger', G: 'Torhüter' }[pos]} einsetzen</h1>
+    ${bench.length ? bench.map((p) => prow(p, { btn: `<button class="plus" data-put="${p.id}">+</button>` })).join('') : '<div class="empty">Kein Spieler auf der Bank. Hole einen im Markt oder setze einen anderen Spieler auf die Bank.</div>'}`);
+  bg.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-put]');
+    if (b) { e.stopPropagation(); moveTo(Number(b.dataset.put), pos === 'G' ? 9 : line, bg); }
+    else if (e.target.closest('[data-open]')) { bg.remove(); openPlayer(e.target.closest('[data-open]').dataset.open); }
+  });
+}
+
 /* ---------- settings + game rules ---------- */
 function openSheet(html) {
   const bg = document.createElement('div');
@@ -387,6 +432,12 @@ document.addEventListener('click', async (e) => {
   const mode = t.closest('[data-mode]');
   if (mode && mode.closest('.seg')) { S.mode = mode.dataset.mode; return render(); }
   if (mode) return showAuth(mode.dataset.mode);
+  const line = t.closest('[data-line]');
+  if (line) { S.line = Number(line.dataset.line); return render(); }
+  const slot = t.closest('[data-slot]');
+  if (slot) return slotSheet(Number(slot.dataset.slot));
+  const add = t.closest('[data-add]');
+  if (add) { const [pos, ln] = add.dataset.add.split(':'); return addSheet(pos, Number(ln)); }
   const lsub = t.closest('[data-lsub]');
   if (lsub) { S.sub.live = lsub.dataset.lsub; return render(); }
   if (t.closest('[data-settings]')) return openSettings();
