@@ -12,7 +12,7 @@ const TEAM_COLORS = {
 };
 const POS = { F: 'Stürmer', D: 'Verteidiger', G: 'Torhüter' };
 
-const S = { line: 1, team: null, tab: 'board', sub: { team: 'roster', league: 'rank', nhl: 'games', live: 'play' }, mode: 'buy', me: null, pos: '', sort: 'expiry', q: '', top: '', timer: null, cd: null };
+const S = { gsub: 'up', line: 1, team: null, tab: 'board', sub: { team: 'roster', league: 'rank', nhl: 'games', live: 'play' }, mode: 'buy', me: null, pos: '', sort: 'expiry', q: '', top: '', timer: null, cd: null };
 
 /* ---------- helpers ---------- */
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -231,13 +231,14 @@ const views = {
   },
 
   async market() {
-    const t = await api('/api/team');
-    const bal = `<div class="balbar"><span>Kontostand</span><b>${fmt(t.balance)}</b><span>Kader ${t.players.length}/20</span></div>`;
+    const [t, au] = await Promise.all([api('/api/team'), api('/api/auctions')]);
+    const bidSum = au.bids.reduce((s, b) => s + b.amount, 0);
+    const after = t.balance - bidSum;
+    const bal = `<div class="balbar"><span>Kontostand<b>${fmt(t.balance)}</b></span><span>Nach Geboten<b class="${after < 0 ? 'down' : ''}">${fmt(after)}</b></span><span>Kader<b>${t.players.length}/20</b></span></div>`;
     const head = '';
     const f = [['', 'Alle'], ['F', 'Stürmer'], ['D', 'Verteidiger'], ['G', 'Torhüter']];
     let list;
     if (S.mode === 'mine') {
-      const au = await api('/api/auctions');
       return `${bal}${auctionsHtml(au)}<div class="floatseg">${seg('mode', S.mode, MODES)}</div>`;
     }
     if (S.mode === 'sell') {
@@ -292,11 +293,26 @@ const views = {
       return `${head}<div class="tabs">${[['', 'Alle'], ['F', 'Stürmer'], ['D', 'Verteidiger'], ['G', 'Torhüter']].map(([v, l]) => `<button data-top="${v}" aria-pressed="${S.top === v}">${l}</button>`).join('')}</div>
         <div style="margin-top:12px">${list.length ? list.map((p, i) => `<div class="toprow">${'<div class="n">' + (i + 1) + '.</div>'}${prow(p, { right: `<b>${fmt(p.points)}</b><small>Punkte</small>`, sub: `<b>${p.games}</b><small>Spiele</small><b>${p.goals}</b><small>Tore</small>` })}</div>`).join('') : '<div class="empty">Noch keine Statistiken. Starte <code>npm run stats</code>.</div>'}</div>`;
     }
-    const d = await api('/api/live');
+    const games = await api('/api/games');
+    S.games = games;
+    const done = (g) => g.state === 'FINAL' || g.state === 'OFF';
+    const upcoming = games.filter((g) => !done(g));
+    const finished = games.filter(done).reverse();
+    const list = S.gsub === 'done' ? finished : upcoming;
     const zone = { timeZone: 'Europe/Zurich', hour: '2-digit', minute: '2-digit' };
-    const stateText = (g) => (g.state === 'LIVE' || g.state === 'CRIT') ? '<small class="live">Live</small>' : (g.state === 'FINAL' || g.state === 'OFF') ? '<small>Ende</small>' : `<small>${g.start ? new Date(g.start).toLocaleTimeString('de-CH', zone) : 'bald'}</small>`;
+    const dayFmt = (iso) => new Date(iso).toLocaleDateString('de-CH', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/Zurich' });
     let lastDay = '';
-    return `${head}${d.games.length ? d.games.map((g) => { const h = g.day !== lastDay ? `<div class="dayhead">${esc(g.day)}</div>` : ''; lastDay = g.day; return `${h}<div class="game"><div class="t">${logo(g.home)}${esc(g.home)}</div><div class="mid"><b>${g.homeScore ?? '–'} : ${g.awayScore ?? '–'}</b>${stateText(g)}</div><div class="t r">${esc(g.away)}${logo(g.away)}</div></div>`; }).join('') : '<div class="empty">Keine Spiele im Spielplan.</div>'}`;
+    const rows = list.map((g) => {
+      const dd = g.start ? dayFmt(g.start) : g.day;
+      const h = dd !== lastDay ? `<div class="dayhead">${esc(dd)}</div>` : '';
+      lastDay = dd;
+      const mid = (g.state === 'LIVE' || g.state === 'CRIT') ? `<b>${g.homeScore ?? 0} : ${g.awayScore ?? 0}</b><small class="live">Live</small>`
+        : done(g) ? `<b>${g.homeScore ?? '–'} : ${g.awayScore ?? '–'}</b><small>Ende</small>` : `<b class="time">${g.start ? new Date(g.start).toLocaleTimeString('de-CH', zone) : 'bald'}</b>`;
+      return `${h}<div class="game" data-game="${g.id}" role="button" tabindex="0"><div class="t">${logo(g.home)}${esc(g.home)}</div><div class="mid">${mid}</div><div class="t r">${esc(g.away)}${logo(g.away)}</div></div>`;
+    }).join('');
+    return `${head}<div class="tabs">${[['up', 'Kommend (' + upcoming.length + ')'], ['done', 'Beendet (' + finished.length + ')']].map(([v, l]) => `<button data-gsub="${v}" aria-pressed="${S.gsub === v}">${l}</button>`).join('')}</div>
+      ${list.length ? rows : '<div class="empty">Keine Spiele in dieser Liste. Der Spielplan wird von der NHL geladen.</div>'}
+      <div class="note">Tippe auf ein Spiel für Tore, Assists und Strafen.</div>`;
   },
 };
 
@@ -324,6 +340,28 @@ function header() {
 }
 
 async function refreshMe() { S.me = await api('/api/me'); }
+
+/* ---------- game detail ---------- */
+const PERIOD = (e) => (e.periodType === 'SO' ? 'Penaltyschiessen' : e.periodType === 'OT' ? 'Verlängerung' : `${e.period}. Drittel`);
+async function gameSheet(id) {
+  const g = (S.games || []).find((x) => x.id === id);
+  if (!g) return;
+  const started = g.state !== 'FUT' && g.state !== 'PRE';
+  const head = `<div class="shead"><div class="ptag">${esc(g.day)}</div><div class="sname">${esc(g.home)} ${started ? `${g.homeScore ?? 0} : ${g.awayScore ?? 0}` : 'vs'} ${esc(g.away)}</div>
+    <div class="ptag">${started ? (g.state === 'FINAL' || g.state === 'OFF' ? 'Beendet' : 'Läuft') : 'Noch nicht gestartet'}</div></div>`;
+  const bg = openSheet(head + (started ? '<div class="empty" id="gbody">Lade Spieldetails …</div>' : '<div class="empty">Das Spiel hat noch nicht begonnen.</div>'));
+  if (!started) return;
+  let ev;
+  try { ev = await api(`/api/games/${id}/events`); } catch (e) { const b = bg.querySelector('#gbody'); if (b) b.textContent = e.message; return; }
+  const group = (items, row) => {
+    let last = '';
+    return items.map((e) => { const p = PERIOD(e); const h = p !== last ? `<div class="dayhead">${p}</div>` : ''; last = p; return h + row(e); }).join('');
+  };
+  const goals = ev.goals.length ? group(ev.goals, (e) => `<div class="ev"><div class="evt">${esc(e.time)}</div>${logo(e.team)}<div class="evm"><b>${esc(e.scorer)}</b><small>${e.assists.length ? 'Assists: ' + esc(e.assists.join(', ')) : 'Ohne Assist'}</small></div><div class="evs">${e.home ?? ''}${e.home != null ? ' : ' + e.away : ''}</div></div>`) : '<div class="empty">Keine Tore.</div>';
+  const pens = ev.penalties.length ? group(ev.penalties, (e) => `<div class="ev"><div class="evt">${esc(e.time)}</div>${logo(e.team)}<div class="evm"><b>${esc(e.player)}</b><small>${esc(e.text)}</small></div><div class="evs">${e.minutes} Min</div></div>`) : '<div class="empty">Keine Strafen.</div>';
+  const b = bg.querySelector('#gbody');
+  if (b) b.outerHTML = `<h2>Tore &amp; Assists</h2>${goals}<h2>Strafen</h2>${pens}`;
+}
 
 /* ---------- bids, offers ---------- */
 async function act(path, body, okMsg, bg) {
@@ -489,6 +527,10 @@ document.addEventListener('click', async (e) => {
   const mode = t.closest('[data-mode]');
   if (mode && mode.closest('.seg')) { S.mode = mode.dataset.mode; return render(); }
   if (mode) return showAuth(mode.dataset.mode);
+  const gm = t.closest('[data-game]');
+  if (gm) return gameSheet(Number(gm.dataset.game));
+  const gsub = t.closest('[data-gsub]');
+  if (gsub) { S.gsub = gsub.dataset.gsub; return render(); }
   const line = t.closest('[data-line]');
   if (line) { S.line = Number(line.dataset.line); return render(); }
   const slot = t.closest('[data-slot]');

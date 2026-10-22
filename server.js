@@ -5,7 +5,7 @@ import { randomBytes } from 'node:crypto';
 import { extname, join } from 'node:path';
 import * as game from './game.js';
 import { SCORING, PRICE, RULES } from './config.js';
-import { startScheduler, getGameLog } from './nhl.js';
+import { startScheduler, getGameLog, getGameEvents } from './nhl.js';
 
 const ROOT = new URL('.', import.meta.url).pathname;
 const PORT = Number(process.env.PORT || 3000);
@@ -102,6 +102,7 @@ async function api(req, res, url) {
     case 'GET /api/league': return send(res, 200, game.league(user.id));
     case 'GET /api/live': return send(res, 200, game.liveView(user.id));
     case 'GET /api/rules': return send(res, 200, { SCORING, PRICE, RULES });
+    case 'GET /api/games': return send(res, 200, game.allGames());
     case 'GET /api/ticker': return send(res, 200, game.ticker());
     case 'GET /api/topscorers': return send(res, 200, game.topscorers(user.id, { pos: q.get('pos') }));
     case 'GET /api/moves': return send(res, 200, game.recentMoves());
@@ -113,6 +114,17 @@ async function api(req, res, url) {
     case 'POST /api/accept': { const b = await body(req); return send(res, 200, game.acceptBid(user.id, Number(b.playerId), Number(b.bidderId))); }
     case 'POST /api/lineup': { const b = await body(req); return send(res, 200, game.setLineup(user.id, Number(b.playerId), Number(b.line))); }
     case 'POST /api/sell': return send(res, 200, game.sell(user.id, Number((await body(req)).playerId)));
+  }
+  const ge = url.pathname.match(/^\/api\/games\/(\d+)\/events$/);
+  if (ge && req.method === 'GET') {
+    try {
+      const ev = await getGameEvents(Number(ge[1]));
+      if (!ev) throw new game.HttpError(404, 'Spiel nicht gefunden.');
+      return send(res, 200, ev);
+    } catch (e) {
+      if (e instanceof game.HttpError) throw e;
+      throw new game.HttpError(502, 'Die NHL liefert die Spieldetails gerade nicht.');
+    }
   }
   const m = url.pathname.match(/^\/api\/players\/(\d+)$/);
   if (m && req.method === 'GET') {

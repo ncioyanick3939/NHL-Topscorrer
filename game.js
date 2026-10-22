@@ -77,18 +77,33 @@ export function ensureStarterTeam(userId) {
       AND id NOT IN (SELECT player_id FROM roster) AND (injury_status IS NULL OR injury_status != 'out')`).all(pos, cap);
   const shuffle = (a) => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
 
+  const target = (need.minTotal + need.maxTotal) / 2;
+  const inRange = (t) => t >= need.minTotal && t <= need.maxTotal;
   for (const cap of [need.maxPlayerPrice, need.maxPlayerPrice * 2, 10 ** 9]) {
-    const pools = { F: shuffle(poolFor('F', cap)), D: shuffle(poolFor('D', cap)), G: shuffle(poolFor('G', cap)) };
+    const pools = { F: poolFor('F', cap), D: poolFor('D', cap), G: poolFor('G', cap) };
     if (pools.F.length < need.F || pools.D.length < need.D || pools.G.length < need.G) continue;
-    const pick = [...pools.F.slice(0, need.F), ...pools.D.slice(0, need.D), ...pools.G.slice(0, need.G)];
-    if (pick.reduce((s, p) => s + p.price, 0) > need.maxTotal && cap !== 10 ** 9) continue;
-    tx(() => {
-      if (db.prepare('SELECT COUNT(*) AS n FROM roster WHERE user_id = ?').get(userId).n === 0) {
-        for (const p of pick) db.prepare('INSERT INTO roster (user_id, player_id, bought_for) VALUES (?,?,?)').run(userId, p.id, p.price);
+    for (let attempt = 0; attempt < 30; attempt++) {
+      const take = (pos, n) => shuffle([...pools[pos]]).slice(0, n).map((p) => ({ ...p, pos }));
+      const pick = [...take('F', need.F), ...take('D', need.D), ...take('G', need.G)];
+      let total = pick.reduce((s, p) => s + p.price, 0);
+      // Swap players of the same position for cheaper or dearer ones until the total is between min and max.
+      for (let step = 0; step < 400 && !inRange(total); step++) {
+        const i = Math.floor(Math.random() * pick.length);
+        const pool = pools[pick[i].pos];
+        const cand = pool[Math.floor(Math.random() * pool.length)];
+        if (pick.some((p) => p.id === cand.id)) continue;
+        const next = total - pick[i].price + cand.price;
+        if (Math.abs(next - target) < Math.abs(total - target)) { pick[i] = { ...cand, pos: pick[i].pos }; total = next; }
       }
-      db.prepare('UPDATE users SET starter_given = 1 WHERE id = ?').run(userId);
-    });
-    return true;
+      if (!inRange(total)) continue;
+      tx(() => {
+        if (db.prepare('SELECT COUNT(*) AS n FROM roster WHERE user_id = ?').get(userId).n === 0) {
+          for (const p of pick) db.prepare('INSERT INTO roster (user_id, player_id, bought_for) VALUES (?,?,?)').run(userId, p.id, p.price);
+        }
+        db.prepare('UPDATE users SET starter_given = 1 WHERE id = ?').run(userId);
+      });
+      return true;
+    }
   }
   return false; // not enough players loaded yet: try again at the next login
 }
@@ -407,4 +422,11 @@ export function auctions(userId) {
     WHERE r.user_id = ? ORDER BY r.id DESC LIMIT 10`).all(userId)
     .map((r) => ({ won: !!r.won, amount: r.amount, at: r.at, name: `${r.first} ${r.last}`.trim() }));
   return { bids, offers, results };
+}
+
+
+/** All known games, newest first for finished ones is done by the client. */
+export function allGames() {
+  return db.prepare('SELECT id, day, start_utc, state, home, away, home_score, away_score FROM games ORDER BY start_utc, id LIMIT 600').all()
+    .map((g) => ({ id: g.id, day: g.day, start: g.start_utc, state: g.state, home: g.home, away: g.away, homeScore: g.home_score, awayScore: g.away_score }));
 }

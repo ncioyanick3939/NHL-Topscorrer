@@ -213,3 +213,16 @@ nav.bar button{font-size:10px;padding:9px 0}nav.bar svg{width:20px;height:20px}
 .shead{text-align:center}.sheet p{text-align:center}
 .lock.lineup{background:var(--up-bg);color:var(--up)}
 .nhlin{background:var(--yellow);color:var(--navy);border-radius:5px;padding:1px 6px;margin-left:4px;font-weight:800;letter-spacing:.08em}
+
+.balbar{align-items:flex-start}
+.balbar span{display:grid;gap:2px}
+.balbar span:nth-child(2){text-align:center}.balbar span:last-child{text-align:right}
+.balbar b{font-size:20px}
+.balbar b.down{color:var(--down)}
+.game[data-game]{cursor:pointer}
+.game .mid b.time{font-size:18px;color:var(--mute)}
+.ev{display:flex;align-items:center;gap:10px;background:var(--navy-2);border-radius:10px;padding:9px 12px;margin-bottom:6px;text-align:left}
+.ev img{width:22px;height:22px;flex:none}
+.evt{width:44px;color:var(--mute);font-size:12px;font-variant-numeric:tabular-nums}
+.evm{flex:1;min-width:0}.evm b{display:block;font-size:15px}.evm small{color:var(--mute);font-size:12px}
+.evs{font-family:var(--f-display);font-size:18px;font-weight:700;color:var(--yellow)}

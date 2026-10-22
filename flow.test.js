@@ -376,3 +376,34 @@ test('every player belongs to one manager only', async () => {
   assert.throws(() => game.placeBid(b, 550001, 900000), /nicht auf dem Markt|einem anderen/);
   assert.equal(game.topscorers(b, {}).find((p) => p.id === 550001)?.ownerName ?? 'one_a', 'one_a');
 });
+
+test('starter team always costs between 3.0 and 3.5 million', () => {
+  delete process.env.NO_STARTER;
+  try {
+    for (let i = 0; i < 8; i++) {
+      const uid = game.register('Start' + i, 'passwort123', 'testcode', 'testcode');
+      const team = game.myTeam(uid);
+      if (!team.players.length) continue; // not enough free players left in the small test pool
+      assert.equal(team.players.length, 16);
+      assert.ok(team.value >= 3_000_000 && team.value <= 3_500_000, `value ${team.value}`);
+    }
+  } finally { process.env.NO_STARTER = '1'; }
+});
+
+test('game events: goals with assists and penalties are read from play-by-play', async () => {
+  const { parseGameEvents } = await import('./nhl.js');
+  const json = {
+    homeTeam: { id: 1, abbrev: 'NJD' }, awayTeam: { id: 2, abbrev: 'TOR' },
+    rosterSpots: [{ playerId: 10, firstName: { default: 'Nico' }, lastName: { default: 'Hischier' } }, { playerId: 11, firstName: { default: 'Jack' }, lastName: { default: 'Hughes' } }, { playerId: 20, firstName: { default: 'Auston' }, lastName: { default: 'Matthews' } }],
+    plays: [
+      { typeDescKey: 'goal', periodDescriptor: { number: 1, periodType: 'REG' }, timeInPeriod: '05:12', details: { eventOwnerTeamId: 1, scoringPlayerId: 10, assist1PlayerId: 11, homeScore: 1, awayScore: 0 } },
+      { typeDescKey: 'penalty', periodDescriptor: { number: 2, periodType: 'REG' }, timeInPeriod: '10:00', details: { eventOwnerTeamId: 2, committedByPlayerId: 20, descKey: 'tripping', duration: 2 } },
+      { typeDescKey: 'shot-on-goal', details: {} },
+    ],
+  };
+  const ev = parseGameEvents(json);
+  assert.deepEqual(ev.goals, [{ period: 1, periodType: 'REG', time: '05:12', team: 'NJD', scorer: 'Nico Hischier', assists: ['Jack Hughes'], home: 1, away: 0 }]);
+  assert.equal(ev.penalties[0].player, 'Auston Matthews');
+  assert.equal(ev.penalties[0].text, 'Beinstellen');
+  assert.equal(ev.penalties[0].minutes, 2);
+});

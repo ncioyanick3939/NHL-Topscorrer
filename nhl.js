@@ -166,6 +166,48 @@ export function parseGameLog(json, limit = 5) {
   });
 }
 
+const GERMAN_PENALTY = {
+  tripping: 'Beinstellen', hooking: 'Haken', slashing: 'Stockschlag', holding: 'Halten', interference: 'Behinderung',
+  'cross-checking': 'Check mit dem Stock', 'high-sticking': 'Hoher Stock', roughing: 'Übertriebene Härte', fighting: 'Schlägerei',
+  boarding: 'Check gegen die Bande', 'delaying-game': 'Spielverzögerung', 'too-many-men-on-the-ice': 'Zu viele Spieler',
+  elbowing: 'Ellbogen', charging: 'Rempeln', 'unsportsmanlike-conduct': 'Unsportliches Verhalten', 'holding-the-stick': 'Stock halten',
+  'illegal-check-to-head': 'Kopfcheck', 'checking-from-behind': 'Check von hinten', kneeing: 'Knie', 'game-misconduct': 'Spieldauer-Disziplinarstrafe',
+};
+const penaltyText = (k) => GERMAN_PENALTY[k] ?? String(k || 'Strafe').replace(/-/g, ' ');
+
+/** gamecenter/{id}/play-by-play -> goals (with assists) and penalties in plain form. */
+export function parseGameEvents(json) {
+  const names = new Map();
+  for (const r of json.rosterSpots ?? []) names.set(r.playerId, `${r.firstName?.default ?? ''} ${r.lastName?.default ?? ''}`.trim());
+  const teams = new Map([[json.homeTeam?.id, json.homeTeam?.abbrev], [json.awayTeam?.id, json.awayTeam?.abbrev]]);
+  const nm = (id) => names.get(id) ?? '?';
+  const goals = [];
+  const penalties = [];
+  for (const p of json.plays ?? []) {
+    const d = p.details ?? {};
+    const base = { period: p.periodDescriptor?.number ?? null, periodType: p.periodDescriptor?.periodType ?? 'REG', time: p.timeInPeriod ?? '', team: teams.get(d.eventOwnerTeamId) ?? '' };
+    if (p.typeDescKey === 'goal') {
+      goals.push({ ...base, scorer: nm(d.scoringPlayerId), assists: [d.assist1PlayerId, d.assist2PlayerId].filter(Boolean).map(nm), home: d.homeScore ?? null, away: d.awayScore ?? null });
+    } else if (p.typeDescKey === 'penalty') {
+      penalties.push({ ...base, player: d.committedByPlayerId ? nm(d.committedByPlayerId) : 'Bank', minutes: d.duration ?? 2, text: penaltyText(d.descKey) });
+    }
+  }
+  return { goals, penalties };
+}
+
+const eventCache = new Map();
+/** Goals, assists and penalties of one game. Cached 30 s while running, 6 h when finished. Throws if the NHL does not answer. */
+export async function getGameEvents(gameId) {
+  const hit = eventCache.get(gameId);
+  const g = db.prepare('SELECT state FROM games WHERE id = ?').get(gameId);
+  if (!g) return null;
+  const ttl = g.state === 'FINAL' || g.state === 'OFF' ? 6 * 3_600_000 : 30_000;
+  if (hit && Date.now() - hit.t < ttl) return hit.data;
+  const data = parseGameEvents(await fetchJson(`/gamecenter/${gameId}/play-by-play`));
+  eventCache.set(gameId, { t: Date.now(), data });
+  return data;
+}
+
 const logCache = new Map();
 /** Last games of one player from the NHL, cached for 30 minutes. Returns null if the NHL does not answer. */
 export async function getGameLog(playerId) {
@@ -273,13 +315,20 @@ export async function syncSchedule() {
   // Also look 1 and 2 weeks ahead so the next games (for example after a break) show up early. Optional: errors are ignored.
   const extrasDue = Date.now() - Number(getMeta('last_schedule_extra') || 0) > 3_600_000;
   if (extrasDue) setMeta('last_schedule_extra', Date.now());
-  for (const days of extrasDue ? [7, 14] : []) {
+  for (const days of extrasDue ? [-21, -14, -7, 7, 14] : []) {
     try {
       const d = new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
       games.push(...parseSchedule(await fetchJson(`/schedule/${d}`)));
     } catch { /* the main schedule is enough */ }
   }
-  tx(() => { for (const g of games) upsertGame.run(g); });
+  // Old games are only shown (results, goals). Their days count as closed, so they never move any price.
+  const historyBefore = new Date(Date.now() - 2 * 86_400_000).toISOString().slice(0, 10);
+  tx(() => {
+    for (const g of games) {
+      if (g.day < historyBefore) db.prepare('INSERT OR IGNORE INTO days (day) VALUES (?)').run(g.day);
+      upsertGame.run(g);
+    }
+  });
   return games.length;
 }
 

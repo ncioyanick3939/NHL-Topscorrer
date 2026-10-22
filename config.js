@@ -35,7 +35,7 @@ export const RULES = {
   marketSlots: 48,
   marketHours: 48,
   // Starter team given once to every new manager (free): 9 forwards + 6 defensemen + 1 goalie.
-  starter: { F: 9, D: 6, G: 1, maxPlayerPrice: 450_000, maxTotal: 3_500_000 },
+  starter: { F: 9, D: 6, G: 1, maxPlayerPrice: 450_000, minTotal: 3_000_000, maxTotal: 3_500_000 },
   userListingHours: 24,   // how long a player offered by a manager stays on the market
   injurySyncMs: 60 * 60_000,
 };
