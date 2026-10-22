@@ -96,7 +96,7 @@ async function api(req, res, url) {
       game.ensureStarterTeam(user.id); // accounts made before the starter team existed get it now
       const team = game.myTeam(user.id);
       const rank = game.league(user.id).findIndex((r) => r.me) + 1;
-      return send(res, 200, { name: user.name, balance: team.balance, value: team.value, points: team.points, rank, count: team.players.length });
+      return send(res, 200, { name: user.name, balance: team.balance, value: team.value, points: team.points, rank, count: team.players.length, invite: INVITE });
     }
     case 'GET /api/players':
       return send(res, 200, game.listPlayers(user.id, { pos: q.get('pos'), q: q.get('q'), sort: q.get('sort'), limit: q.get('limit') }));

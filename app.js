@@ -425,7 +425,7 @@ const SUBHEAD = {
 function paint(html) {
   const keep = document.activeElement?.id === 'q';
   const y = window.scrollY;
-  $app.innerHTML = header() + `<main>${html}</main>`;
+  $app.innerHTML = header() + `<main>${installTip()}${html}</main>`;
   if (keep) { const q = document.getElementById('q'); q?.focus(); q?.setSelectionRange(q.value.length, q.value.length); }
   window.scrollTo(0, y);
   if (S.wantNext) { const el = document.getElementById('nextgame'); if (el) { S.wantNext = false; el.scrollIntoView({ block: 'center' }); } }
@@ -619,6 +619,7 @@ function openSheet(html) {
 function openSettings() {
   const bg = openSheet(`<div class="shead"><div class="sname">${esc(S.me?.name || '')}</div><div class="ptag">Konto ${fmt(S.me?.balance || 0)}</div></div>
     <button class="btn buy wide" data-rules style="margin-top:18px">Spielregeln</button>
+    <button class="btn buy wide" data-invite style="margin-top:10px">Freunde einladen</button>
     <button class="btn sell wide" data-logout style="margin-top:10px">Abmelden</button>`);
   bg.addEventListener('click', async (e) => {
     if (e.target.closest('[data-rules]')) { bg.remove(); openRules(); }
@@ -660,7 +661,7 @@ function showAuth(mode = 'login', error = '') {
     ${error ? `<div class="err">${esc(error)}</div>` : ''}
     <label>Name<input class="field" name="name" autocomplete="username" required minlength="2" maxlength="20"></label>
     <label>Passwort<input class="field" name="password" type="password" autocomplete="${reg ? 'new-password' : 'current-password'}" required minlength="8"></label>
-    ${reg ? '<label>Einladungscode<input class="field" name="invite" autocomplete="off" required></label>' : ''}
+    ${reg ? `<label>Einladungscode<input class="field" name="invite" autocomplete="off" required value="${esc(S.inviteFromUrl || '')}"></label>` : ''}
     <button class="btn buy wide" type="submit">${reg ? 'Konto erstellen' : 'Anmelden'}</button>
     <button class="link" type="button" data-mode="${reg ? 'login' : 'register'}">${reg ? 'Schon ein Konto? Anmelden' : 'Neu hier? Konto erstellen'}</button></form>`;
 }
@@ -729,6 +730,33 @@ document.addEventListener('change', (e) => {
 });
 
 /* ---------- start ---------- */
+const linkInvite = new URLSearchParams(location.search).get('invite');
+if (linkInvite) { S.inviteFromUrl = linkInvite; history.replaceState(null, '', location.pathname); }
 (async () => {
-  try { await refreshMe(); render(); } catch { showAuth(); }
+  try { await refreshMe(); render(); } catch { showAuth(S.inviteFromUrl ? 'register' : 'login'); }
 })();
+
+/* ---------- home screen tip (iPhone and Android) ---------- */
+let installEvent = null;
+window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installEvent = e; });
+const isStandalone = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const tipSeen = () => { try { return localStorage.getItem('tipSeen') === '1'; } catch { return false; } };
+function installTip() {
+  if (isStandalone() || tipSeen()) return '';
+  const ua = navigator.userAgent;
+  const ios = /iPhone|iPad|iPod/.test(ua);
+  const android = /Android/.test(ua);
+  if (!ios && !android) return '';
+  const how = ios ? 'Tippe unten auf <b>Teilen</b> (Quadrat mit Pfeil), dann auf <b>Zum Home-Bildschirm</b>.'
+    : installEvent ? '<button class="link" data-install type="button">Jetzt installieren</button>'
+      : 'Tippe oben rechts auf das <b>Menü ⋮</b>, dann auf <b>Zum Startbildschirm hinzufügen</b>.';
+  return `<div class="tip"><div><b>App aufs Handy holen</b><small>${how}</small></div><button class="x" data-tipclose aria-label="Schliessen">✕</button></div>`;
+}
+document.addEventListener('click', async (e) => {
+  if (e.target.closest('[data-tipclose]')) { try { localStorage.setItem('tipSeen', '1'); } catch {} e.target.closest('.tip')?.remove(); }
+  if (e.target.closest('[data-install]') && installEvent) { installEvent.prompt(); installEvent = null; try { localStorage.setItem('tipSeen', '1'); } catch {} e.target.closest('.tip')?.remove(); }
+  if (e.target.closest('[data-invite]')) {
+    const url = `${location.origin}/?invite=${encodeURIComponent(S.me?.invite || '')}`;
+    try { if (navigator.share) await navigator.share({ title: 'NHL Topscorer', text: 'Spiel mit mir NHL Topscorer:', url }); else { await navigator.clipboard.writeText(url); toast('Einladungslink kopiert'); } } catch { /* cancelled */ }
+  }
+});

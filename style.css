@@ -424,3 +424,7 @@ body{min-height:100vh;min-height:calc(100dvh + 1px)}
 .lph em{position:absolute;bottom:-6px;left:50%;transform:translateX(-50%);font:600 10px var(--f-body);font-style:normal;background:var(--navy-2);border:1px solid var(--line);border-radius:7px;padding:0 4px;color:#fff;white-space:nowrap}
 .ltx{min-width:0}.ltx small{display:block;color:var(--mute);font-size:10px;text-transform:uppercase;letter-spacing:.05em}
 .ltx b{display:block;font:700 16px var(--f-display);text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+.tip{display:flex;gap:10px;align-items:flex-start;justify-content:space-between;background:var(--navy-2);border:1px solid var(--yellow);border-radius:14px;padding:12px 14px;margin:14px 0}
+.tip b{display:block;margin-bottom:3px}.tip small{display:block;color:var(--mute);font-size:13px;line-height:1.4}.tip small b{display:inline;color:#fff}
+.tip .x{background:none;border:0;color:var(--mute);font-size:18px;padding:0 2px;cursor:pointer}
