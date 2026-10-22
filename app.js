@@ -12,7 +12,7 @@ const TEAM_COLORS = {
 };
 const POS = { F: 'Stürmer', D: 'Verteidiger', G: 'Torhüter' };
 
-const S = { gsub: 'up', line: 1, team: null, tab: 'board', sub: { team: 'roster', league: 'rank', nhl: 'games', live: 'play' }, mode: 'buy', me: null, pos: '', sort: 'expiry', q: '', top: '', timer: null, cd: null };
+const S = { scrollNext: false, wantNext: false, gsub: 'up', line: 1, team: null, tab: 'board', sub: { team: 'roster', league: 'rank', nhl: 'games', live: 'play' }, mode: 'buy', me: null, pos: '', sort: 'expiry', q: '', top: '', timer: null, cd: null };
 
 /* ---------- helpers ---------- */
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -306,23 +306,21 @@ const views = {
     const games = await api('/api/games');
     S.games = games;
     const done = (g) => g.state === 'FINAL' || g.state === 'OFF';
-    const upcoming = games.filter((g) => !done(g));
-    const finished = games.filter(done).reverse();
-    const list = S.gsub === 'done' ? finished : upcoming;
+    const nextIdx = games.findIndex((g) => !done(g)); // first game that is running or still to come
     const zone = { timeZone: 'Europe/Zurich', hour: '2-digit', minute: '2-digit' };
     const dayFmt = (iso) => new Date(iso).toLocaleDateString('de-CH', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/Zurich' });
     let lastDay = '';
-    const rows = list.map((g) => {
+    const rows = games.map((g, k) => {
       const dd = g.start ? dayFmt(g.start) : g.day;
-      const h = dd !== lastDay ? `<div class="dayhead">${esc(dd)}</div>` : '';
+      const h = dd !== lastDay ? `<div class="dayhead"${k === nextIdx ? ' id="nextgame"' : ''}>${esc(dd)}</div>` : '';
       lastDay = dd;
       const mid = (g.state === 'LIVE' || g.state === 'CRIT') ? `<b>${g.homeScore ?? 0} : ${g.awayScore ?? 0}</b><small class="live">Live</small>`
         : done(g) ? `<b>${g.homeScore ?? '–'} : ${g.awayScore ?? '–'}</b><small>Ende</small>` : `<b class="time">${g.start ? new Date(g.start).toLocaleTimeString('de-CH', zone) : 'bald'}</b>`;
-      return `${h}<div class="game" data-game="${g.id}" role="button" tabindex="0"><div class="t">${logo(g.home)}${esc(g.home)}</div><div class="mid">${mid}</div><div class="t r">${esc(g.away)}${logo(g.away)}</div></div>`;
+      return `${h}<div class="game${k === nextIdx ? ' next' : ''}" data-game="${g.id}" role="button" tabindex="0"><div class="t">${logo(g.home)}${esc(g.home)}</div><div class="mid">${mid}</div><div class="t r">${esc(g.away)}${logo(g.away)}</div></div>`;
     }).join('');
-    return `${head}<div class="tabs">${[['up', 'Kommend (' + upcoming.length + ')'], ['done', 'Beendet (' + finished.length + ')']].map(([v, l]) => `<button data-gsub="${v}" aria-pressed="${S.gsub === v}">${l}</button>`).join('')}</div>
-      ${list.length ? rows : '<div class="empty">Keine Spiele in dieser Liste. Der Spielplan wird von der NHL geladen.</div>'}
-      <div class="note">Tippe auf ein Spiel für Tore, Assists und Strafen.</div>`;
+    if (S.scrollNext) { S.scrollNext = false; S.wantNext = true; }
+    return `${head}${games.length ? rows : '<div class="empty">Keine Spiele im Spielplan. Der Spielplan wird von der NHL geladen.</div>'}
+      <div class="note">Oben die vergangenen Spiele, unten die kommenden. Tippe auf ein Spiel für Tore, Assists und Strafen.</div>`;
   },
 };
 
@@ -338,6 +336,7 @@ async function render() {
   $app.innerHTML = header() + `<main>${html}</main>`;
   if (keep) { const q = document.getElementById('q'); q?.focus(); q?.setSelectionRange(q.value.length, q.value.length); }
   window.scrollTo(0, y);
+  if (S.wantNext) { S.wantNext = false; const el = document.getElementById('nextgame'); if (el) el.scrollIntoView({ block: 'center' }); }
   tickCountdown();
   S.cd = setInterval(tickCountdown, 1000);
   if (S.tab === 'live' || S.tab === 'board') S.timer = setTimeout(render, 30_000);
@@ -345,7 +344,7 @@ async function render() {
 
 const STAR = '<svg viewBox="0 0 24 24" class="star" aria-hidden="true"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.6 7-6.2-3.7-6.2 3.7 1.6-7L2 9.2l7.1-.6z"/></svg>';
 function header() {
-  return `<header class="top"><div class="top-in"><div class="chip">Saison 26/27</div><div class="logo">${STAR}<span>NHL Topscorer</span></div>
+  return `<header class="top"><div class="top-in"><div class="chip">Saison 26/27</div><div class="logo">${STAR}<b>NHL</b><span>Topscorer</span></div>
     <button class="gear" data-settings aria-label="Einstellungen"><svg viewBox="0 0 24 24"><path d="M19.4 13a7.6 7.6 0 000-2l2-1.6-2-3.4-2.4 1a7.5 7.5 0 00-1.7-1L15 3.4h-4l-.4 2.6a7.5 7.5 0 00-1.7 1l-2.4-1-2 3.4 2 1.6a7.6 7.6 0 000 2l-2 1.6 2 3.4 2.4-1a7.5 7.5 0 001.7 1l.4 2.6h4l.4-2.6a7.5 7.5 0 001.7-1l2.4 1 2-3.4zM13 15.5a3.5 3.5 0 110-7 3.5 3.5 0 010 7z" transform="translate(-1 0)"/></svg></button></div></header>`;
 }
 
@@ -363,14 +362,22 @@ async function gameSheet(id) {
   if (!started) return;
   let ev;
   try { ev = await api(`/api/games/${id}/events`); } catch (e) { const b = bg.querySelector('#gbody'); if (b) b.textContent = e.message; return; }
-  const group = (items, row) => {
-    let last = '';
-    return items.map((e) => { const p = PERIOD(e); const h = p !== last ? `<div class="dayhead">${p}</div>` : ''; last = p; return h + row(e); }).join('');
-  };
-  const goals = ev.goals.length ? group(ev.goals, (e) => `<div class="ev"><div class="evt">${esc(e.time)}</div>${logo(e.team)}<div class="evm"><b>${esc(e.scorer)}</b><small>${e.assists.length ? 'Assists: ' + esc(e.assists.join(', ')) : 'Ohne Assist'}</small></div><div class="evs">${e.home ?? ''}${e.home != null ? ' : ' + e.away : ''}</div></div>`) : '<div class="empty">Keine Tore.</div>';
-  const pens = ev.penalties.length ? group(ev.penalties, (e) => `<div class="ev"><div class="evt">${esc(e.time)}</div>${logo(e.team)}<div class="evm"><b>${esc(e.player)}</b><small>${esc(e.text)}</small></div><div class="evs">${e.minutes} Min</div></div>`) : '<div class="empty">Keine Strafen.</div>';
+  const secs = (e) => { const [m, s] = String(e.time).split(':').map(Number); return (m || 0) * 60 + (s || 0); };
+  const periodKey = (e) => (e.periodType === 'SO' ? 9 : e.periodType === 'OT' ? 4 : e.period ?? 0);
+  const all = [...ev.goals.map((e) => ({ ...e, kind: 'goal' })), ...ev.penalties.map((e) => ({ ...e, kind: 'pen' }))]
+    .sort((x, y) => periodKey(x) - periodKey(y) || secs(x) - secs(y));
+  let lastP = '';
+  const timeline = all.length ? all.map((e) => {
+    const p = PERIOD(e);
+    const h = p !== lastP ? `<div class="dayhead">${p}</div>` : '';
+    lastP = p;
+    const body = e.kind === 'goal'
+      ? `<div class="evm"><b>${esc(e.scorer)}</b><small>${e.assists.length ? 'Assists: ' + esc(e.assists.join(', ')) : 'Ohne Assist'}</small></div><div class="evs">${e.home != null ? e.home + ' : ' + e.away : ''}</div>`
+      : `<div class="evm"><b>${esc(e.player)}</b><small>${esc(e.text)}</small></div><div class="evs pen">${e.minutes} Min</div>`;
+    return `${h}<div class="ev ${e.kind}"><div class="evt">${esc(e.time)}</div>${logo(e.team)}<span class="tagk ${e.kind}">${e.kind === 'goal' ? 'TOR' : 'STRAFE'}</span>${body}</div>`;
+  }).join('') : '<div class="empty">Bisher keine Tore und keine Strafen.</div>';
   const b = bg.querySelector('#gbody');
-  if (b) b.outerHTML = `<h2>Tore &amp; Assists</h2>${goals}<h2>Strafen</h2>${pens}`;
+  if (b) b.outerHTML = `<h2>Spielverlauf <small>${ev.goals.length} Tore · ${ev.penalties.length} Strafen</small></h2>${timeline}`;
 }
 
 /* ---------- bids, offers ---------- */
@@ -527,9 +534,9 @@ document.addEventListener('click', async (e) => {
   const open = t.closest('[data-open]');
   if (open) return openPlayer(open.dataset.open);
   const tab = t.closest('nav.bar button');
-  if (tab) { S.tab = tab.dataset.t; window.scrollTo(0, 0); return render(); }
+  if (tab) { S.tab = tab.dataset.t; if (S.tab === 'nhl' && S.sub.nhl === 'games') S.scrollNext = true; window.scrollTo(0, 0); return render(); }
   const sub = t.closest('[data-sub]');
-  if (sub) { const [k, v] = sub.dataset.sub.split(':'); S.sub[k] = v; window.scrollTo(0, 0); return render(); }
+  if (sub) { const [k, v] = sub.dataset.sub.split(':'); S.sub[k] = v; if (k === 'nhl' && v === 'games') S.scrollNext = true; window.scrollTo(0, 0); return render(); }
   const pos = t.closest('[data-pos]');
   if (pos) { S.pos = pos.dataset.pos; return render(); }
   const top = t.closest('[data-top]');

@@ -242,3 +242,17 @@ nav.bar svg{width:24px;height:24px}
 .app,main{padding-bottom:150px}
 .floatseg{bottom:calc(112px + env(safe-area-inset-bottom,0px))}
 .toast{bottom:calc(120px + env(safe-area-inset-bottom,0px))}
+
+/* header in blue (not the yellow of the original), logo with NHL */
+.top{background:linear-gradient(180deg,#2f6bd6,#1f4aa8);color:#fff}
+.chip{background:rgba(255,255,255,.18);color:#fff}
+.gear{background:rgba(255,255,255,.18)}.gear svg{fill:#fff}
+.logo{gap:0;line-height:1}
+.logo .star{width:22px;height:22px;fill:#fff;margin-bottom:-2px}
+.logo b{font:800 24px var(--f-display);letter-spacing:.14em;color:#fff}
+.logo span{font:600 10px var(--f-body);letter-spacing:.28em;text-transform:uppercase;opacity:.85}
+.game.next{border-color:var(--yellow)}
+.tagk{font:800 9px var(--f-body);letter-spacing:.1em;border-radius:5px;padding:2px 5px;flex:none}
+.tagk.goal{background:var(--yellow);color:var(--navy)}.tagk.pen{background:var(--down-bg);color:var(--down)}
+.ev.pen{border-left:3px solid var(--down)}.ev.goal{border-left:3px solid var(--yellow)}
+.evs.pen{color:var(--down)}
