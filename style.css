@@ -267,3 +267,68 @@ nav.bar svg{width:24px;height:24px}
 .tr small{font-size:10px;color:var(--mute);line-height:1.2;display:block}
 .mv{display:flex;justify-content:space-between;align-items:center;background:var(--navy-2);border-radius:10px;padding:10px 12px;margin-bottom:6px;cursor:pointer}
 .mv small{color:var(--mute);margin-left:4px}.mv b{font-family:var(--f-display);font-size:18px}
+
+/* ===== Mix: Topscorers layout + NHL ice, jersey numbers, scoreboard ===== */
+:root{--red:#e5384f;--ice:#3d7bff}
+.top{background:linear-gradient(180deg,#1f57c4,#173f96);border-bottom:4px solid var(--red);padding-bottom:12px}
+.chip{background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.22)}
+.logo b{font-size:30px;letter-spacing:.12em;text-shadow:0 2px 0 rgba(0,0,0,.25)}
+.logo .star{display:none}
+.logo span{letter-spacing:.34em;color:#fff;opacity:1;font-size:9px;margin-top:2px}
+.subtabs{background:#101a30;border-bottom:1px solid rgba(255,255,255,.06)}
+.subtabs button{font-size:12px;padding:16px 4px;letter-spacing:.06em}
+
+/* jersey number chip on every photo */
+.av i{right:-6px;bottom:-4px;min-width:24px;text-align:center;background:var(--navy);color:var(--yellow);font:800 13px var(--f-display);letter-spacing:.02em;border:2px solid var(--yellow);border-radius:8px;padding:0 5px;line-height:18px}
+.prow .av{width:68px;height:68px;margin-right:4px}
+.prow{background:linear-gradient(135deg,#243556,#1d2b48);border-radius:18px;padding:12px;border:1px solid rgba(255,255,255,.06);box-shadow:0 6px 16px rgba(0,0,0,.18)}
+.pn{font-size:25px;letter-spacing:.01em}
+.pright>img{width:34px;height:34px}
+.pnums b{font-size:20px}
+
+/* hero as rink */
+.hero{position:relative;overflow:hidden;background:linear-gradient(170deg,#27406f,#1a2a4c);border:1px solid rgba(255,255,255,.1)}
+.hero::before{content:"";position:absolute;right:-30px;top:50%;transform:translateY(-50%);width:170px;height:170px;border-radius:50%;border:3px solid rgba(61,123,255,.35);background:linear-gradient(90deg,transparent calc(50% - 2px),rgba(229,56,79,.35) calc(50% - 2px) calc(50% + 2px),transparent calc(50% + 2px))}
+.hero::after{display:none}
+.hero>*{position:relative;z-index:1}
+.hero .big{font-size:56px}
+.tile b{color:var(--yellow)}
+
+/* bottom nav: Topscorers pill, selected = dark pill */
+nav.bar div{background:rgba(32,46,78,.94);padding:8px 10px;border-radius:36px}
+nav.bar button{color:#9fb0cf;font-size:11px}
+nav.bar button[aria-selected=true]{background:#121c33;color:var(--yellow);box-shadow:inset 0 0 0 1px rgba(255,196,0,.25)}
+nav.bar svg{width:26px;height:26px}
+.seg{background:rgba(32,46,78,.95)}.seg button[aria-pressed=true]{background:#121c33;color:var(--yellow)}
+
+/* lineup rink */
+.ice{position:relative;overflow:hidden;background:linear-gradient(180deg,#223a66,#182846);border:1px solid rgba(255,255,255,.1);border-radius:30px;padding:26px 6px 30px;gap:30px;height:560px;align-content:space-between}
+.rink{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.ice .lrow{position:relative;z-index:1;gap:30px}
+.slot{width:104px}
+.slot .av{width:76px;height:76px}
+.slot .sn{font-size:15px;letter-spacing:.04em;text-shadow:0 1px 3px rgba(0,0,0,.6)}
+.slot .sv{display:none}
+.slot.empty .plusc{width:76px;height:76px;background:rgba(10,18,36,.35);border-color:rgba(255,255,255,.35)}
+.sx{right:14px;top:0}
+
+/* scoreboard countdown */
+.cd{background:linear-gradient(180deg,#0e1830,#121f3b);border:1px solid rgba(255,255,255,.1);border-radius:20px;margin-top:14px;padding:18px 10px 16px;box-shadow:inset 0 0 0 4px #0a1226}
+.cdday{color:var(--mute);letter-spacing:.14em}
+.cdnums{gap:10px}
+.cdnums>div{min-width:64px}
+.cdnums b{position:relative;background:#050a18;border-radius:10px;padding:10px 0 8px;font-size:42px;color:#ffd84a;text-shadow:0 0 14px rgba(255,196,0,.45);margin-bottom:6px}
+.cdnums b::after{content:"";position:absolute;left:0;right:0;top:50%;height:2px;background:rgba(0,0,0,.6)}
+
+/* detail sheet: watermarks */
+.sheet.center{overflow-x:hidden;background:linear-gradient(180deg,#1d2f55,#141f38 40%)}
+.wmlogo{position:absolute;left:50%;top:-10px;transform:translateX(-50%);width:300px;height:300px;opacity:.07;pointer-events:none}
+.wmlogo img{width:100%;height:100%}
+.sheet.center>*{position:relative}
+.sheet.center>.close{position:absolute}
+.photo{position:relative}
+.wm{position:absolute;left:0;right:0;top:50%;transform:translateY(-52%);font:800 280px/1 var(--f-display);color:transparent;-webkit-text-stroke:2px rgba(255,196,0,.35);text-align:center;pointer-events:none;letter-spacing:-.02em}
+.photo .av.lg{width:150px;height:150px;z-index:1;box-shadow:0 10px 30px rgba(0,0,0,.4)}
+.photo .av i{font-size:20px;line-height:26px;min-width:38px;border-radius:10px;right:-12px;bottom:0}
+.big3 b{color:#fff}.big3:first-of-type b{font-size:34px}
+.sheet.center>.wmlogo{position:absolute}

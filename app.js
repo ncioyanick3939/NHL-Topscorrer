@@ -12,7 +12,7 @@ const TEAM_COLORS = {
 };
 const POS = { F: 'Stürmer', D: 'Verteidiger', G: 'Torhüter' };
 
-const S = { scrollNext: false, wantNext: false, gsub: 'up', line: 1, team: null, tab: 'board', sub: { team: 'roster', league: 'rank', nhl: 'games', live: 'play' }, mode: 'buy', me: null, pos: '', sort: 'expiry', q: '', top: '', timer: null, cd: null };
+const S = { scrollNext: false, wantNext: false, gsub: 'up', line: 1, team: null, tab: 'board', sub: { team: 'market', league: 'rank', nhl: 'games', live: 'play' }, mode: 'buy', me: null, pos: '', sort: 'expiry', q: '', top: '', timer: null, cd: null };
 
 /* ---------- helpers ---------- */
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -51,7 +51,7 @@ function avatar(p, large) {
   const c = TEAM_COLORS[p.team] || ['#2c3e63', '#fff'];
   const ini = ((p.first || '').charAt(0) + (p.last || '').charAt(0)).toUpperCase();
   const img = p.headshot ? `<img class="ph" src="${esc(p.headshot)}" alt="" loading="lazy">` : '';
-  return `<div class="av${large ? ' lg' : ''}" style="background:${c[0]};color:${c[1]}">${esc(ini)}${img}<i>${esc(p.pos)}</i></div>`;
+  return `<div class="av${large ? ' lg' : ''}" style="background:${c[0]};color:${c[1]}">${esc(ini)}${img}<i>${esc(p.number != null ? p.number : p.pos)}</i></div>`;
 }
 
 function spark(h) {
@@ -111,7 +111,7 @@ function prow(p, o = {}) {
   const right = o.right ?? `<b>${fmt(p.price)}</b><small>${o.rightLabel || 'Marktwert'}</small>`;
   const sub = o.sub ?? `<b>${fmt(p.points)}</b><small>Punkte</small><b>${avg(p)}</b><small>Ø Punkte</small>`;
   return `<div class="prow${o.btn ? ' hasbtn' : ''}" data-open="${p.id}" tabindex="0" role="button" aria-label="${esc(p.first + ' ' + p.last)}">
-    ${avatar(p)}<div class="pmain"><div class="ptag">${esc(tag)}${nhl}${o.timer && p.onMarket ? ` <span class="timer">noch ${hoursText(p.hoursLeft)}</span>` : ''}</div>
+    ${avatar(p)}<div class="pmain"><div class="ptag">${esc(tag)}${nhl}${o.timer && p.onMarket ? ` <span class="timer">${hoursText(p.hoursLeft)}</span>` : ''}</div>
       <div class="pn">${esc(p.last)}${p.first ? `<small>${esc(p.first)}</small>` : ''}</div>
       <div class="pnums">${sub}</div>${badges ? `<div class="pbadges">${badges}</div>` : ''}</div>
     <div class="pright">${logo(p.team)}<div class="pval">${right}</div>${o.btn || ''}</div></div>`;
@@ -139,8 +139,8 @@ async function openPlayer(id) {
     ? `<h2>Transfers</h2><ul class="log">${d.transfers.map((t) => `<li><div>${esc(t.user)} ${t.kind === 'buy' ? 'kauft' : 'verkauft'}<small>vor ${ago(t.at)}</small></div><div style="text-align:right"><b>${fmt(t.price)}</b></div></li>`).join('')}</ul>` : '';
   bg.innerHTML = `<div class="sheet center" role="dialog" aria-label="${esc(d.first + ' ' + d.last)}">
     <button class="close" data-close aria-label="Schliessen">✕</button>
-    <div class="shead">${logo(d.team)}<div class="sname">${esc(d.first)} ${esc(d.last)}</div><div class="ptag">#${d.number ?? '–'} · ${POS[d.pos]} · ${esc(d.team)}</div></div>
-    <div class="photo">${avatar(d, true)}</div>
+    <div class="wmlogo">${logo(d.team)}</div><div class="shead">${logo(d.team)}<div class="sname">${esc(d.first)} ${esc(d.last)}</div><div class="ptag">#${d.number ?? '–'} · ${POS[d.pos]} · ${esc(d.team)}</div></div>
+    <div class="photo"><div class="wm">${esc(d.number ?? '')}</div>${avatar(d, true)}</div>
     <div class="big3"><div><b>${fmt(d.points)}</b><span>Punkte</span></div><div><b>${avg(d)}</b><span>Ø Punkte</span></div><div><b>${fmt(d.price)}</b><span>Marktwert ${pill(d)}</span></div></div>
     <div class="big3 small"><div><b>${d.boughtFor != null ? fmt(d.boughtFor) : '–'}</b><span>Gekauft für</span></div><div><b class="${gain == null ? '' : gain >= 0 ? 'up' : 'down'}">${gain == null ? '–' : sign(gain)}</b><span>Gewinn</span></div><div><b>${d.todayPts}</b><span>Heute live</span></div></div>
     <div class="grid4"><div><b>${d.games}</b><span>Spiele</span></div><div><b>${d.goals}</b><span>Tore</span></div><div><b>${d.assists}</b><span>Assists</span></div><div><b>${d.plusMinus > 0 ? '+' : ''}${d.plusMinus}</b><span>+/−</span></div>
@@ -189,6 +189,8 @@ function trendHtml(t, full) {
 /* ---------- views ---------- */
 const subtabs = (key, items) => `<div class="subtabs">${items.map(([v, l]) => `<button data-sub="${key}:${v}" aria-selected="${S.sub[key] === v}">${l}</button>`).join('')}</div>`;
 const seg = (attr, cur, items) => `<div class="seg">${items.map(([v, l]) => `<button data-${attr}="${v}" aria-pressed="${cur === v}">${l}</button>`).join('')}</div>`;
+const TEAMTABS = () => subtabs('team', [['market', 'Transfermarkt'], ['roster', 'Kader'], ['lineup', 'Aufstellung']]);
+const RINK = '<svg class="rink" viewBox="0 0 360 560" preserveAspectRatio="none" aria-hidden="true"><rect x="3" y="3" width="354" height="554" rx="46" fill="none" stroke="#fff" stroke-opacity=".16" stroke-width="3"/><line x1="4" y1="16" x2="356" y2="16" stroke="#e5384f" stroke-opacity=".6" stroke-width="4"/><circle cx="180" cy="16" r="54" fill="none" stroke="#3d7bff" stroke-opacity=".5" stroke-width="3"/><line x1="4" y1="268" x2="356" y2="268" stroke="#3d7bff" stroke-opacity=".5" stroke-width="6"/><circle cx="116" cy="336" r="56" fill="none" stroke="#e5384f" stroke-opacity=".42" stroke-width="3"/><circle cx="244" cy="336" r="56" fill="none" stroke="#e5384f" stroke-opacity=".42" stroke-width="3"/><line x1="4" y1="540" x2="356" y2="540" stroke="#e5384f" stroke-opacity=".6" stroke-width="3"/><path d="M146 540a34 34 0 0168 0z" fill="#3d7bff" fill-opacity=".25" stroke="#3d7bff" stroke-opacity=".6" stroke-width="2"/></svg>';
 const MODES = [['buy', 'Bieten'], ['sell', 'Verkaufen'], ['mine', 'Meine']];
 const dayLong = (iso) => new Date(iso).toLocaleDateString('de-CH', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Europe/Zurich' });
 
@@ -223,7 +225,8 @@ const views = {
   },
 
   async team() {
-    const head = subtabs('team', [['roster', 'Kader'], ['lineup', 'Aufstellung']]);
+    if (S.sub.team === 'market') return views.market();
+    const head = TEAMTABS();
     const t = await api('/api/team');
     S.team = t;
     if (S.sub.team === 'lineup') {
@@ -239,7 +242,7 @@ const views = {
       const placed = t.players.filter((p) => p.lineup > 0).length;
       const bench = t.players.filter((p) => p.lineup === 0);
       return `${head}<div class="balbar"><span>Aufstellung</span><b>${placed}/16</b><span>Bank ${bench.length}</span></div>
-        <div class="ice"><div class="lrow">${slot('F', L, 0)}</div><div class="lrow">${slot('F', L, 1)}${slot('F', L, 2)}</div><div class="lrow">${slot('D', L, 0)}${slot('D', L, 1)}</div><div class="lrow g">${slot('G', 9, 0)}</div></div>
+        <div class="ice">${RINK}<div class="lrow">${slot('F', L, 0)}</div><div class="lrow">${slot('F', L, 1)}${slot('F', L, 2)}</div><div class="lrow">${slot('D', L, 0)}${slot('D', L, 1)}</div><div class="lrow g">${slot('G', 9, 0)}</div></div>
         <div class="floatseg">${seg('line', String(L), [['1', '1. Linie'], ['2', '2. Linie'], ['3', '3. Linie']])}</div>
         ${bench.length ? `<div class="grp">Bank</div>${bench.map((p) => prow(p)).join('')}` : ''}
         <div class="note">Nur Spieler in der Aufstellung bringen Punkte. Tippe auf ein Feld, um einen Spieler einzusetzen oder auf die Bank zu setzen. Spieler, deren Team heute spielt, sind gesperrt.</div>`;
@@ -258,12 +261,12 @@ const views = {
     const bidSum = au.bids.reduce((s, b) => s + b.amount, 0);
     const after = t.balance - bidSum;
     const bal = `<div class="balbar"><span>Kontostand<b>${fmt(t.balance)}</b></span><span>Nach Geboten<b class="${after < 0 ? 'down' : ''}">${fmt(after)}</b></span><span>Kader<b>${t.players.length}/20</b></span></div>`;
-    const head = '';
+    const head = TEAMTABS();
     const f = [['', 'Alle'], ['F', 'Stürmer'], ['D', 'Verteidiger'], ['G', 'Torhüter']];
     const trendBar = trendHtml(trend, false);
     let list;
     if (S.mode === 'mine') {
-      return `${bal}${trendBar}${auctionsHtml(au)}<div class="floatseg">${seg('mode', S.mode, MODES)}</div>`;
+      return `${head}${bal}${trendBar}${auctionsHtml(au)}<div class="floatseg">${seg('mode', S.mode, MODES)}</div>`;
     }
     if (S.mode === 'sell') {
       list = t.players.filter((p) => !S.pos || p.pos === S.pos);
