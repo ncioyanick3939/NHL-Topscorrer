@@ -341,3 +341,11 @@ nav.bar svg{width:26px;height:26px}
 nav.bar button .navlogo{height:34px;width:auto;margin:auto;opacity:.6;filter:grayscale(.3);transition:opacity .15s}
 nav.bar button[aria-selected=true] .navlogo{opacity:1;filter:none}
 nav.bar button[data-t=nhl]{display:grid;place-items:center}
+
+/* stable layout on iOS: the page is always at least one screen tall, so the fixed bar never jumps */
+html{height:100%}
+body{min-height:100vh;min-height:calc(100dvh + 1px)}
+.loading{display:flex;justify-content:center;gap:10px;padding:90px 0}
+.loading i{width:12px;height:12px;border-radius:50%;background:var(--yellow);opacity:.25;animation:ld 1s infinite}
+.loading i:nth-child(2){animation-delay:.15s}.loading i:nth-child(3){animation-delay:.3s}
+@keyframes ld{50%{opacity:1;transform:translateY(-6px)}}

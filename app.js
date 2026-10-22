@@ -23,16 +23,29 @@ const arrow = (c) => (c === 'up' ? '▲' : c === 'down' ? '▼' : '–');
 const pill = (p) => { const c = cls(p); return `<span class="pill ${c}">${arrow(c)} ${Math.abs(pct(p)).toFixed(1)}%</span>`; };
 const logo = (t) => `<img src="https://assets.nhle.com/logos/nhl/svg/${esc(t)}_light.svg" alt="" loading="lazy">`;
 
+const apiCache = new Map(); // GET responses for a few seconds, so switching tabs back and forth feels instant
+const apiFlight = new Map();
 async function api(path, opts = {}) {
-  const res = await fetch(path, {
-    method: opts.body ? 'POST' : 'GET',
-    headers: opts.body ? { 'Content-Type': 'application/json' } : {},
-    body: opts.body ? JSON.stringify(opts.body) : undefined,
-  });
-  const data = await res.json().catch(() => ({}));
-  if (res.status === 401 && !opts.quiet) { showAuth(); throw new Error('login'); }
-  if (!res.ok) throw new Error(data.error || 'Fehler');
-  return data;
+  const isGet = !opts.body;
+  if (isGet) {
+    const hit = apiCache.get(path);
+    if (hit && Date.now() - hit.t < 15_000 && !opts.fresh) return hit.data;
+    if (apiFlight.has(path)) return apiFlight.get(path);
+  } else apiCache.clear(); // any change invalidates everything
+  const run = (async () => {
+    const res = await fetch(path, {
+      method: isGet ? 'GET' : 'POST',
+      headers: isGet ? {} : { 'Content-Type': 'application/json' },
+      body: isGet ? undefined : JSON.stringify(opts.body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 401 && !opts.quiet) { showAuth(); throw new Error('login'); }
+    if (!res.ok) throw new Error(data.error || 'Fehler');
+    if (isGet) apiCache.set(path, { t: Date.now(), data });
+    return data;
+  })();
+  if (isGet) { apiFlight.set(path, run); run.finally(() => apiFlight.delete(path)).catch(() => {}); }
+  return run;
 }
 
 function toast(msg) {
@@ -345,21 +358,41 @@ const views = {
   },
 };
 
+let renderId = 0;
+const htmlCache = new Map();
+const SUBHEAD = {
+  team: () => TEAMTABS(),
+  league: () => subtabs('league', [['rank', 'Rangliste'], ['ticker', 'Liga-Ticker']]),
+  live: () => subtabs('live', [['team', 'Team'], ['league', 'Liga']]),
+  nhl: () => subtabs('nhl', [['games', 'Spiele'], ['top', 'Topscorer']]),
+};
+function paint(html) {
+  const keep = document.activeElement?.id === 'q';
+  const y = window.scrollY;
+  $app.innerHTML = header() + `<main>${html}</main>`;
+  if (keep) { const q = document.getElementById('q'); q?.focus(); q?.setSelectionRange(q.value.length, q.value.length); }
+  window.scrollTo(0, y);
+  if (S.wantNext) { const el = document.getElementById('nextgame'); if (el) { S.wantNext = false; el.scrollIntoView({ block: 'center' }); } }
+  tickCountdown();
+}
+
 async function render() {
+  const my = ++renderId;
   clearTimeout(S.timer);
   clearInterval(S.cd);
   $nav.hidden = false;
   $nav.querySelectorAll('button').forEach((b) => b.setAttribute('aria-selected', b.dataset.t === S.tab));
-  const y = window.scrollY;
-  let html;
-  try { html = await views[S.tab](); } catch (e) { if (e.message === 'login') return; html = `<div class="err" style="margin-top:20px">${esc(e.message)}</div>`; }
-  const keep = document.activeElement?.id === 'q';
-  $app.innerHTML = header() + `<main>${html}</main>`;
-  if (keep) { const q = document.getElementById('q'); q?.focus(); q?.setSelectionRange(q.value.length, q.value.length); }
-  window.scrollTo(0, y);
-  if (S.wantNext) { S.wantNext = false; const el = document.getElementById('nextgame'); if (el) el.scrollIntoView({ block: 'center' }); }
-  tickCountdown();
+  const key = [S.tab, S.sub[S.tab], S.mode, S.pos, S.sort, S.q, S.line, S.liveSeg, S.top].join('|');
+  const cached = htmlCache.get(key);
+  // Show the last known screen (or a loading hint) right away, then replace it with fresh data.
+  paint(cached ?? `${SUBHEAD[S.tab]?.() ?? ''}<div class="loading"><i></i><i></i><i></i></div>`);
   S.cd = setInterval(tickCountdown, 1000);
+  let html;
+  try { html = await views[S.tab](); } catch (e) { if (e.message === 'login') return; if (my !== renderId) return; html = `<div class="err" style="margin-top:20px">${esc(e.message)}</div>`; }
+  if (my !== renderId) return; // a newer render took over
+  htmlCache.set(key, html);
+  if (html !== cached) paint(html);
+  if (S.wantNext) { S.wantNext = false; document.getElementById('nextgame')?.scrollIntoView({ block: 'center' }); }
   if (S.tab === 'live' || S.tab === 'board') S.timer = setTimeout(render, 30_000);
 }
 
