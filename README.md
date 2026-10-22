@@ -20,26 +20,32 @@ Beim ersten Start lädt der Server automatisch alle 32 NHL-Kader und den Spielpl
 
 Kader von Hand neu laden: `npm run sync`. Verletzungen von Hand laden: `npm run injuries`. Einen Durchlauf von Hand starten: `npm run process`. Tests: `npm test`.
 
-## Öffentlich ins Internet stellen (läuft immer)
+## Öffentlich ins Internet stellen (gratis, läuft immer)
 
-Ein Codespace schaltet sich nach etwa 30 Minuten ohne Aktivität ab. Für eine Webseite, die immer läuft, braucht es ein Hosting. Am einfachsten ist **Railway** (ca. 5 USD pro Monat, Abrechnung nach Verbrauch):
+Ein Codespace schaltet sich nach etwa 30 Minuten ohne Aktivität ab. Dauerhaft und gratis läuft die App auf einem **Google Cloud „Always Free“-Server** (e2-micro). Er kostet nichts, schaltet sich nie ab und behält die Datenbank. Google verlangt bei der Anmeldung eine Kreditkarte zur Überprüfung, belastet sie aber nicht, solange du in den Gratis-Grenzen bleibst.
 
-1. Auf https://railway.com mit dem GitHub-Konto anmelden.
-2. **New Project → Deploy from GitHub repo** und dieses Repository wählen. Railway findet das `Dockerfile` selbst.
-3. Im Dienst rechts klicken → **Attach Volume**, Mount Path: `/data`. Dort liegt die Datenbank, sie bleibt bei jedem Update erhalten.
-4. Unter **Variables** `INVITE_CODE` auf einen eigenen Code setzen (sonst steht ein zufälliger im Log).
-5. Unter **Settings → Networking → Generate Domain** klicken. Das ergibt eine feste Adresse wie `nhl-topscorer.up.railway.app`, die du deinen Freunden schicken kannst.
+1. Auf https://console.cloud.google.com mit einem Google-Konto anmelden und das kostenlose Konto aktivieren.
+2. **Compute Engine → VM-Instanzen → Instanz erstellen**:
+   - Region: **us-central1**, **us-west1** oder **us-east1** (nur dort ist er gratis)
+   - Maschinentyp: **e2-micro**
+   - Bootlaufwerk: **Ubuntu 24.04 LTS**, Typ **Standard persistent disk**, 30 GB
+   - Firewall: **HTTP- und HTTPS-Traffic zulassen** ankreuzen
+3. Bei der neuen Instanz auf **SSH** klicken. Im Fenster, das aufgeht, diesen einen Befehl einfügen:
 
-Danach wird bei jedem Push auf `main` automatisch neu veröffentlicht. Beim ersten Start lädt der Server die NHL-Kader (etwa eine Minute).
+   ```bash
+   curl -fsSL https://raw.githubusercontent.com/ncioyanick3939/NHL-Topscorrer/main/deploy/setup.sh | sudo bash
+   ```
 
-Das `Dockerfile` läuft auch auf Fly.io, Render (mit Disk) oder einem eigenen Server. Wichtig ist immer: ein bleibender Speicher unter `/data`. Ohne ihn ist die Datenbank nach jedem Neustart leer.
+4. Am Ende steht die Adresse (z.B. `https://34-12-56-78.sslip.io`) und der Einladungscode. Diese Adresse schickst du deinen Freunden.
 
-| Variable | Bedeutung |
-| --- | --- |
-| `DATA_DIR` | Ordner für Datenbank und Einladungscode (im Dockerfile `/data`) |
-| `INVITE_CODE` | fester Einladungscode |
-| `COOKIE_SECURE=1` | Login-Cookie nur über HTTPS (im Dockerfile gesetzt) |
-| `TRUST_PROXY=1` | echte Besucher-IP vom Hosting übernehmen, für die Login-Sperre (im Dockerfile gesetzt) |
+Das Skript richtet alles ein: Node.js, die App als Dienst (startet nach Absturz oder Neustart von selbst), HTTPS mit Zertifikat und ein **automatisches Update alle 10 Minuten**: Was auf `main` gepusht wird, ist kurz danach online.
+
+- Eigener Einladungscode: `sudo nano /etc/nhl-topscorer.env`, dort `INVITE_CODE=dein-code` eintragen, dann `sudo systemctl restart nhl-topscorer`.
+- Log ansehen: `sudo journalctl -u nhl-topscorer -f`
+- Backup: die Datei `/var/lib/nhl-topscorer/app.db`
+- Bestehende Daten aus dem Codespace mitnehmen: `data/app.db` im Codespace herunterladen, im SSH-Fenster über **Datei hochladen** hochladen, dann `sudo systemctl stop nhl-topscorer && sudo mv ~/app.db /var/lib/nhl-topscorer/app.db && sudo chown nhl:nhl /var/lib/nhl-topscorer/app.db && sudo systemctl start nhl-topscorer`
+
+Das Skript läuft genauso auf Oracle Cloud „Always Free“ (Ubuntu) oder einem Raspberry Pi. Es gibt auch ein `Dockerfile` für Docker-Hosting (bleibender Speicher unter `/data` nötig).
 
 ## Spielregeln
 

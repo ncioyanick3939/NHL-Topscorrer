@@ -1,7 +1,7 @@
 import dns from 'node:dns';
 dns.setDefaultResultOrder('ipv4first'); // Codespaces: IPv6 to the NHL times out
 import { createServer } from 'node:http';
-import { readFile, mkdir, writeFile } from 'node:fs/promises';
+import { readFile, mkdir, writeFile, stat } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { extname, join } from 'node:path';
@@ -155,8 +155,14 @@ async function serveStatic(req, res, url) {
   const file = name && join(ROOT, name);
   try {
     if (!file) throw new Error('not public');
+    // ETag: the browser keeps its copy and only asks "changed?" (saves traffic on small free servers)
+    const st = await stat(file);
+    const etag = `"${st.size.toString(36)}-${Math.floor(st.mtimeMs).toString(36)}"`;
+    const type = TYPES[extname(file)] || 'application/octet-stream';
+    const cache = type.startsWith('image/') ? 'public, max-age=604800' : 'no-cache'; // images a week, code checked every time
+    if (req.headers['if-none-match'] === etag) { res.writeHead(304, { ETag: etag, 'Cache-Control': cache }); return res.end(); }
     const data = await readFile(file);
-    res.writeHead(200, { 'Content-Type': TYPES[extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-cache' });
+    res.writeHead(200, { 'Content-Type': type, 'Cache-Control': cache, ETag: etag });
     res.end(data);
   } catch {
     res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
