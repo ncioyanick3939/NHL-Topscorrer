@@ -132,9 +132,12 @@ async function api(req, res, url) {
   const m = url.pathname.match(/^\/api\/players\/(\d+)$/);
   if (m && req.method === 'GET') {
     const detail = game.playerDetail(user.id, Number(m[1]));
-    detail.recent = await getGameLog(detail.id); // real last games from the NHL, null if unavailable
-    if (!detail.recent) detail.recentError = lastLogError;
-    return send(res, 200, detail);
+    return send(res, 200, detail); // instant; the NHL game log comes separately so the sheet opens at once
+  }
+  const mg = url.pathname.match(/^\/api\/players\/(\d+)\/games$/);
+  if (mg && req.method === 'GET') {
+    const recent = await getGameLog(Number(mg[1])); // real last games from the NHL, null if unavailable
+    return send(res, 200, { recent, error: recent ? null : lastLogError });
   }
   throw new game.HttpError(404, 'Nicht gefunden.');
 }

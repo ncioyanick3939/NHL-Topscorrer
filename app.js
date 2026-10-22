@@ -158,11 +158,11 @@ async function openPlayer(id) {
     <div class="grid4"><div><b>${d.games}</b><span>Spiele</span></div><div><b>${d.goals}</b><span>Tore</span></div><div><b>${d.assists}</b><span>Assists</span></div><div><b>${d.plusMinus > 0 ? '+' : ''}${d.plusMinus}</b><span>+/−</span></div>
       <div><b>${d.shots}</b><span>Schüsse</span></div><div><b>${d.pim}</b><span>Strafmin.</span></div><div><b>${d.wins}</b><span>Siege</span></div><div><b>${d.blocked ?? 0}</b><span>Geblockt</span></div></div>
     ${injBlock}${live}
-    ${gamesHtml(d.recent, d.recentError, d)}
+    <div id="g1"><div class="empty">Spiele werden geladen …</div></div>
     <div class="big3 small"><div><b>${d.boughtFor != null ? fmt(d.boughtFor) : '–'}</b><span>Gekauft für</span></div><div><b class="${gain == null ? '' : gain >= 0 ? 'up' : 'down'}">${gain == null ? '–' : sign(gain)}</b><span>Gewinn</span></div><div><b>${fmt(d.price)} <i class="${cls(d)}">${arrow(cls(d))}</i></b><span>Marktwert</span></div></div>
     ${priceChart(d)}
     ${transferTimeline(d)}
-    ${gamesListHtml(d.recent)}
+    <div id="g2"></div>
     <details class="fold"><summary><h2>Preisänderungen${d.log.length ? ` <small>${d.log.length}</small>` : ''}</h2></summary>
     ${d.log.length ? `<ul class="log">${d.log.map((l) => `<li><div>${esc(l.day)}<small>${esc(l.summary || '')}</small></div><div style="text-align:right"><b>${l.pts > 0 ? '+' : ''}${l.pts} Pkt</b><small>${fmt(l.price)}</small></div></li>`).join('')}</ul>` : '<div class="empty">Noch keine Preisänderung. Sie kommt nach dem ersten abgeschlossenen Spieltag.</div>'}</details>
     ${action}${lockInfo}</div>`;
@@ -177,6 +177,12 @@ async function openPlayer(id) {
     if (sm) { close(); return sellSheet(d.id); }
   });
   document.body.append(bg);
+  api(`/api/players/${d.id}/games`).then((g) => {
+    const a = bg.querySelector('#g1'), b = bg.querySelector('#g2');
+    if (!a) return;
+    a.innerHTML = gamesHtml(g.recent, g.error, d);
+    b.innerHTML = gamesListHtml(g.recent);
+  }).catch(() => { const a = bg.querySelector('#g1'); if (a) a.innerHTML = '<div class="empty">Die Spiele konnten gerade nicht geladen werden.</div>'; });
 }
 
 /** Points per game like Topscorers: bars of the last games with both logos and the score, season block on the right. */

@@ -346,10 +346,10 @@ const logCache = new Map();
 /** Last games of one player from the NHL, cached for 30 minutes. Returns null if the NHL does not answer. */
 export async function getGameLog(playerId) {
   const hit = logCache.get(playerId);
-  if (hit && Date.now() - hit.t < 30 * 60_000) return hit.data;
+  if (hit && Date.now() - hit.t < (hit.data ? 30 : 2) * 60_000) return hit.data; // failures are remembered for 2 minutes
   try {
     const pos = db.prepare('SELECT pos FROM players WHERE id = ?').get(playerId)?.pos ?? 'F';
-    const raw = await fetchJson(`/player/${playerId}/game-log/now`, 2, 8000); // a player sheet must not wait long
+    const raw = await fetchJson(`/player/${playerId}/game-log/now`, 1, 7000); // a player sheet must not wait long
     const data = parseGameLog(raw, 100, pos);
     const byTeam = new Map();
     for (const team of new Set(data.map((g) => g.team).filter(Boolean))) {
@@ -361,6 +361,7 @@ export async function getGameLog(playerId) {
   } catch (e) {
     console.log(`Spielverlauf von Spieler ${playerId} nicht geladen: ${e.message}`);
     lastLogError = e.message;
+    logCache.set(playerId, { t: Date.now(), data: hit?.data ?? null });
     return hit?.data ?? null;
   }
 }
