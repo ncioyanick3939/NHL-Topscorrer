@@ -127,6 +127,30 @@ CREATE TABLE IF NOT EXISTS transfers (
 );
 CREATE INDEX IF NOT EXISTS transfers_at ON transfers(at);
 
+-- Sealed bids. Nobody sees other people's bids; only the seller of a user listing sees the offers for his player.
+CREATE TABLE IF NOT EXISTS bids (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  player_id INTEGER NOT NULL REFERENCES players(id),
+  amount INTEGER NOT NULL,
+  at TEXT NOT NULL,
+  PRIMARY KEY (user_id, player_id)
+);
+-- A manager offers one of his players to the others.
+CREATE TABLE IF NOT EXISTS user_listings (
+  player_id INTEGER PRIMARY KEY REFERENCES players(id),
+  seller_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  expires_at TEXT NOT NULL
+);
+-- What happened to my bids (won or lost), shown in "Meine Gebote".
+CREATE TABLE IF NOT EXISTS bid_results (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  player_id INTEGER NOT NULL REFERENCES players(id),
+  amount INTEGER NOT NULL,
+  won INTEGER NOT NULL,
+  at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS meta (
   key TEXT PRIMARY KEY,
   value TEXT

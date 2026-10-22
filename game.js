@@ -2,6 +2,7 @@ import { autoFill, autoFillAll, slotFits, GOALIE_SLOT } from './lineup.js';
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { db, tx } from './db.js';
 import { PRICE, RULES } from './config.js';
+import { LOCKED_SQL, logTransfer, cannotReceive, acceptOffer, dropBids } from './auction.js';
 import { nextPrice } from './scoring.js';
 import { refreshMarket } from './market.js';
 
@@ -94,10 +95,6 @@ export function ensureStarterTeam(userId) {
 
 /* ---------- Helpers ---------- */
 
-/** A player is locked while his team plays or has played on a day that is not closed yet. */
-const LOCKED_SQL = `EXISTS (SELECT 1 FROM games g WHERE (g.home = p.team OR g.away = p.team)
-  AND g.state IN ('LIVE','CRIT','FINAL','OFF') AND g.day NOT IN (SELECT day FROM days))`;
-
 const todayPtsSql = `COALESCE((SELECT SUM(ds.pts) FROM day_stats ds WHERE ds.player_id = p.id
   AND ds.day NOT IN (SELECT day FROM days)), 0)`;
 
@@ -119,6 +116,7 @@ function shape(p, owned) {
     missedLast: !!p.missed_last,
     hoursLeft: p.listing_expires ? Math.max(0, Math.ceil((new Date(p.listing_expires) - Date.now()) / 3_600_000)) : null,
     onMarket: !!p.listing_expires && new Date(p.listing_expires) > new Date(),
+    listedBy: p.listed_by ?? null, minBid: p.listed_by ? PRICE.minPrice : p.price_floor ?? p.price,
   };
 }
 
@@ -133,7 +131,9 @@ const MISSED_SQL = `CASE WHEN p.pos != 'G' AND p.games > 0 AND ${LAST_GAME} IS N
   AND NOT EXISTS (SELECT 1 FROM day_stats d WHERE d.game_id = ${LAST_GAME} AND d.player_id = p.id) THEN 1 ELSE 0 END`;
 
 const SELECT_PLAYER = `SELECT p.*, ${LOCKED_SQL} AS locked, ${todayPtsSql} AS today_pts, ${MISSED_SQL} AS missed_last,
-  (SELECT expires_at FROM market_listings m WHERE m.player_id = p.id) AS listing_expires FROM players p`;
+  COALESCE((SELECT expires_at FROM market_listings m WHERE m.player_id = p.id), (SELECT expires_at FROM user_listings l WHERE l.player_id = p.id)) AS listing_expires,
+  (SELECT u.name FROM user_listings l JOIN users u ON u.id = l.seller_id WHERE l.player_id = p.id) AS listed_by,
+  (SELECT l.seller_id FROM user_listings l WHERE l.player_id = p.id) AS listed_by_id FROM players p`;
 
 const ownedSet = (userId) => new Set(db.prepare('SELECT player_id FROM roster WHERE user_id = ?').all(userId).map((r) => r.player_id));
 
@@ -141,7 +141,8 @@ const ownedSet = (userId) => new Set(db.prepare('SELECT player_id FROM roster WH
 
 export function listPlayers(userId, { pos, q, sort, limit = 60 } = {}) {
   refreshMarket();
-  const where = ["p.id IN (SELECT player_id FROM market_listings WHERE expires_at > '" + new Date().toISOString() + "')"];
+  const nowIso = new Date().toISOString();
+  const where = [`(p.id IN (SELECT player_id FROM market_listings WHERE expires_at > '${nowIso}') OR p.id IN (SELECT player_id FROM user_listings WHERE expires_at > '${nowIso}'))`];
   const args = [];
   if (pos && ['F', 'D', 'G'].includes(pos)) { where.push('p.pos = ?'); args.push(pos); }
   if (q) { where.push("(p.first || ' ' || p.last || ' ' || p.team) LIKE ?"); args.push(`%${String(q).slice(0, 40)}%`); }
@@ -149,8 +150,11 @@ export function listPlayers(userId, { pos, q, sort, limit = 60 } = {}) {
   const rows = db.prepare(`${SELECT_PLAYER} ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY ${order}, p.id LIMIT ?`)
     .all(...args, Math.min(Number(limit) || 60, 200));
   const owned = ownedSet(userId);
-  return rows.map((p) => shape(p, owned));
+  const mine = myBids(userId);
+  return rows.map((p) => ({ ...shape(p, owned), myBid: mine.get(p.id) ?? null }));
 }
+
+const myBids = (userId) => new Map(db.prepare('SELECT player_id, amount FROM bids WHERE user_id = ?').all(userId).map((r) => [r.player_id, r.amount]));
 
 export function playerDetail(userId, id) {
   const p = db.prepare(`${SELECT_PLAYER} WHERE p.id = ?`).get(id);
@@ -161,11 +165,7 @@ export function playerDetail(userId, id) {
   const live = db.prepare(`SELECT * FROM day_stats WHERE player_id = ? AND day NOT IN (SELECT day FROM days)`).get(id) ?? null;
   const own = db.prepare('SELECT bought_for FROM roster WHERE user_id = ? AND player_id = ?').get(userId, id);
   const full = db.prepare('SELECT shots, blocked, pim, plus_minus, wins FROM players WHERE id = ?').get(id);
-  return { ...shape(p, ownedSet(userId)), ...full, plusMinus: full.plus_minus, boughtFor: own?.bought_for ?? null, log, live, transfers };
-}
-
-function logTransfer(userId, playerId, kind, price) {
-  db.prepare('INSERT INTO transfers (user_id, player_id, kind, price, at) VALUES (?,?,?,?,?)').run(userId, playerId, kind, price, new Date().toISOString());
+  return { ...shape(p, ownedSet(userId)), myBid: myBids(userId).get(id) ?? null, ...full, plusMinus: full.plus_minus, boughtFor: own?.bought_for ?? null, log, live, transfers };
 }
 
 /** League ticker: the latest buys and sells of all managers. */
@@ -217,6 +217,8 @@ export function sell(userId, playerId) {
     if (!db.prepare('SELECT 1 FROM roster WHERE user_id = ? AND player_id = ?').get(userId, playerId)) throw new HttpError(409, 'Dieser Spieler gehört dir nicht.');
     if (p.locked) throw new HttpError(409, 'Gesperrt: Das Team spielt heute oder der Tag ist noch nicht abgeschlossen.');
     db.prepare('DELETE FROM roster WHERE user_id = ? AND player_id = ?').run(userId, playerId);
+    db.prepare('DELETE FROM user_listings WHERE player_id = ? AND seller_id = ?').run(playerId, userId);
+    if (!db.prepare('SELECT 1 FROM user_listings WHERE player_id = ?').get(playerId)) dropBids(playerId);
     db.prepare('UPDATE users SET balance = balance + ? WHERE id = ?').run(p.price, userId);
     logTransfer(userId, playerId, 'sell', p.price);
     return { price: p.price };
@@ -288,4 +290,100 @@ export function recentMoves(limit = 30) {
   return db.prepare(`SELECT h.day, h.price, h.pts, h.summary, p.id, p.first, p.last, p.team, p.prev_price
                      FROM price_history h JOIN players p ON p.id = h.player_id
                      WHERE h.day = (SELECT MAX(day) FROM days) AND h.pts != 0 ORDER BY ABS(h.pts) DESC LIMIT ?`).all(limit);
+}
+
+
+/* ---------- Bids and offers ---------- */
+
+const onMarketNow = (playerId) => {
+  const iso = new Date().toISOString();
+  const m = db.prepare('SELECT expires_at FROM market_listings WHERE player_id = ? AND expires_at > ?').get(playerId, iso);
+  if (m) return { kind: 'market', expires: m.expires_at };
+  const l = db.prepare('SELECT expires_at, seller_id FROM user_listings WHERE player_id = ? AND expires_at > ?').get(playerId, iso);
+  return l ? { kind: 'user', expires: l.expires_at, sellerId: l.seller_id } : null;
+};
+
+/** Place or change a sealed bid. At least the market value (offers by managers: at least the minimum price). */
+export function placeBid(userId, playerId, amount) {
+  refreshMarket();
+  amount = Math.round(Number(amount));
+  return tx(() => {
+    const p = db.prepare(`${SELECT_PLAYER} WHERE p.id = ?`).get(playerId);
+    if (!p) throw new HttpError(404, 'Spieler nicht gefunden.');
+    const on = onMarketNow(playerId);
+    if (!on) throw new HttpError(409, 'Dieser Spieler ist nicht auf dem Markt.');
+    if (on.sellerId === userId) throw new HttpError(409, 'Das ist dein eigener Spieler.');
+    if (db.prepare('SELECT 1 FROM roster WHERE user_id = ? AND player_id = ?').get(userId, playerId)) throw new HttpError(409, 'Dieser Spieler gehört dir schon.');
+    if (p.locked) throw new HttpError(409, 'Gesperrt: Das Team spielt heute oder der Tag ist noch nicht abgeschlossen.');
+    const min = on.kind === 'user' ? PRICE.minPrice : p.price;
+    if (!Number.isFinite(amount) || amount < min) throw new HttpError(400, `Das Gebot muss mindestens ${min.toLocaleString('de-CH')} sein.`);
+    const why = cannotReceive(userId, p.pos, amount);
+    if (why) throw new HttpError(409, why);
+    db.prepare(`INSERT INTO bids (user_id, player_id, amount, at) VALUES (?,?,?,?)
+                ON CONFLICT(user_id, player_id) DO UPDATE SET amount = excluded.amount, at = excluded.at`).run(userId, playerId, amount, new Date().toISOString());
+    return { ok: true, amount };
+  });
+}
+
+export function cancelBid(userId, playerId) {
+  db.prepare('DELETE FROM bids WHERE user_id = ? AND player_id = ?').run(userId, playerId);
+  return { ok: true };
+}
+
+/** Offer one of my players to the other managers (they bid, I accept one offer or let it run out). */
+export function offerPlayer(userId, playerId) {
+  refreshMarket();
+  return tx(() => {
+    const p = db.prepare(`${SELECT_PLAYER} WHERE p.id = ?`).get(playerId);
+    if (!p || !db.prepare('SELECT 1 FROM roster WHERE user_id = ? AND player_id = ?').get(userId, playerId)) throw new HttpError(409, 'Dieser Spieler gehört dir nicht.');
+    if (p.locked) throw new HttpError(409, 'Gesperrt: Das Team spielt heute oder der Tag ist noch nicht abgeschlossen.');
+    if (db.prepare('SELECT 1 FROM user_listings WHERE player_id = ?').get(playerId)) throw new HttpError(409, 'Dieser Spieler ist schon angeboten.');
+    const expires = new Date(Date.now() + RULES.userListingHours * 3_600_000).toISOString();
+    db.prepare('INSERT INTO user_listings (player_id, seller_id, expires_at) VALUES (?,?,?)').run(playerId, userId, expires);
+    return { ok: true, expires };
+  });
+}
+
+export function cancelOffer(userId, playerId) {
+  return tx(() => {
+    const r = db.prepare('DELETE FROM user_listings WHERE player_id = ? AND seller_id = ?').run(playerId, userId);
+    if (r.changes) {
+      for (const b of db.prepare('SELECT user_id, amount FROM bids WHERE player_id = ?').all(playerId)) {
+        db.prepare('INSERT INTO bid_results (user_id, player_id, amount, won, at) VALUES (?,?,?,0,?)').run(b.user_id, playerId, b.amount, new Date().toISOString());
+      }
+      dropBids(playerId);
+    }
+    return { ok: true };
+  });
+}
+
+export function acceptBid(userId, playerId, bidderId) {
+  return tx(() => {
+    const p = db.prepare(`${SELECT_PLAYER} WHERE p.id = ?`).get(playerId);
+    if (p?.locked) throw new HttpError(409, 'Gesperrt: Das Team spielt heute oder der Tag ist noch nicht abgeschlossen.');
+    const r = acceptOffer(userId, playerId, bidderId);
+    if (r.error) throw new HttpError(409, r.error);
+    return r;
+  });
+}
+
+/** My open bids, offers for my listed players (only I see them), and what happened to my last bids. */
+export function auctions(userId) {
+  refreshMarket();
+  const hours = (iso) => Math.max(0, Math.ceil((new Date(iso) - Date.now()) / 3_600_000));
+  const bids = db.prepare(`SELECT b.player_id AS id, b.amount, p.first, p.last, p.team, p.price,
+      COALESCE((SELECT expires_at FROM market_listings WHERE player_id = p.id), (SELECT expires_at FROM user_listings WHERE player_id = p.id)) AS expires
+    FROM bids b JOIN players p ON p.id = b.player_id WHERE b.user_id = ? ORDER BY expires`).all(userId)
+    .map((r) => ({ id: r.id, name: `${r.first} ${r.last}`.trim(), team: r.team, amount: r.amount, price: r.price, hoursLeft: r.expires ? hours(r.expires) : null }));
+  const offers = db.prepare(`SELECT l.player_id AS id, l.expires_at, p.first, p.last, p.team, p.price FROM user_listings l
+    JOIN players p ON p.id = l.player_id WHERE l.seller_id = ? ORDER BY l.expires_at`).all(userId)
+    .map((l) => ({
+      id: l.id, name: `${l.first} ${l.last}`.trim(), team: l.team, price: l.price, hoursLeft: hours(l.expires_at),
+      bids: db.prepare(`SELECT b.user_id AS userId, u.name AS user, b.amount FROM bids b JOIN users u ON u.id = b.user_id
+                        WHERE b.player_id = ? ORDER BY b.amount DESC, b.at`).all(l.id),
+    }));
+  const results = db.prepare(`SELECT r.won, r.amount, r.at, p.first, p.last FROM bid_results r JOIN players p ON p.id = r.player_id
+    WHERE r.user_id = ? ORDER BY r.id DESC LIMIT 10`).all(userId)
+    .map((r) => ({ won: !!r.won, amount: r.amount, at: r.at, name: `${r.first} ${r.last}`.trim() }));
+  return { bids, offers, results };
 }

@@ -296,3 +296,44 @@ test('lineup: 3 lines of 3F + 2D + 1 goalie, extra players on the bench, only th
   assert.throws(() => game.setLineup(uid, bench.id, 9), /Ungültig/);
   autoFillAll();
 });
+
+test('auction: highest sealed bid wins at expiry; managers can offer players and only the seller sees offers', async () => {
+  const { db } = await import('./db.js');
+  const game = await import('./game.js');
+  const { refreshMarket } = await import('./market.js');
+  const mk = (n) => { db.prepare("INSERT OR IGNORE INTO users (name, salt, pw_hash, balance) VALUES (?,'s','x',1000000)").run(n); return db.prepare('SELECT id FROM users WHERE name=?').get(n).id; };
+  const [a, b, c] = [mk('auc_a'), mk('auc_b'), mk('auc_c')];
+  db.prepare("INSERT OR IGNORE INTO players (id, team, first, last, pos, price, prev_price) VALUES (770001,'ZZY','Auk','Tion','F',200000,200000)").run();
+  const soon = new Date(Date.now() + 3_600_000).toISOString();
+  db.prepare('INSERT OR REPLACE INTO market_listings (player_id, listed_at, expires_at) VALUES (770001, ?, ?)').run(new Date().toISOString(), soon);
+  assert.throws(() => game.placeBid(a, 770001, 150000), /mindestens/);
+  game.placeBid(a, 770001, 210000);
+  game.placeBid(b, 770001, 300000);
+  game.placeBid(c, 770001, 250000);
+  game.placeBid(c, 770001, 260000); // raise own bid
+  assert.equal(game.auctions(a).bids.length, 1);
+  // time passes: the listing expires
+  db.prepare('UPDATE market_listings SET expires_at = ? WHERE player_id = 770001').run(new Date(Date.now() - 1000).toISOString());
+  refreshMarket();
+  assert.ok(db.prepare('SELECT 1 FROM roster WHERE user_id = ? AND player_id = 770001').get(b), 'highest bidder gets the player');
+  assert.equal(db.prepare('SELECT balance FROM users WHERE id = ?').get(b).balance, 700000);
+  assert.equal(db.prepare('SELECT balance FROM users WHERE id = ?').get(a).balance, 1000000, 'losers pay nothing');
+  assert.equal(game.auctions(a).results[0].won, false);
+  assert.equal(game.auctions(b).results[0].won, true);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM bids WHERE player_id = 770001').get().n, 0);
+
+  // b offers the player to the others; only b sees the offers
+  game.offerPlayer(b, 770001);
+  assert.throws(() => game.placeBid(b, 770001, 500000), /eigener/);
+  game.placeBid(a, 770001, 310000);
+  game.placeBid(c, 770001, 350000);
+  assert.equal(game.auctions(a).offers.length, 0);
+  const offers = game.auctions(b).offers[0].bids;
+  assert.deepEqual(offers.map((o) => o.user), ['auc_c', 'auc_a']);
+  assert.throws(() => game.acceptBid(a, 770001, c), /nicht von dir/);
+  game.acceptBid(b, 770001, c);
+  assert.ok(db.prepare('SELECT 1 FROM roster WHERE user_id = ? AND player_id = 770001').get(c));
+  assert.equal(db.prepare('SELECT 1 FROM roster WHERE user_id = ? AND player_id = 770001').get(b), undefined);
+  assert.equal(db.prepare('SELECT balance FROM users WHERE id = ?').get(b).balance, 700000 + 350000);
+  assert.equal(game.auctions(a).results[0].won, false);
+});

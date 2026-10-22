@@ -94,7 +94,7 @@ function injuryBadge(p) {
 /** One player row in the Topscorers style: photo, position, name, points, value. */
 function prow(p, o = {}) {
   const tag = (p.number != null ? '#' + p.number + ' ' : '') + POS[p.pos];
-  const badges = [injuryBadge(p), p.locked ? '<span class="lock">Gesperrt</span>' : '', p.owned && o.owned ? '<span class="lock own">Im Kader</span>' : ''].filter(Boolean).join(' ');
+  const badges = [injuryBadge(p), p.locked ? '<span class="lock">Gesperrt</span>' : '', p.owned && o.owned ? '<span class="lock own">Im Kader</span>' : '', p.myBid ? `<span class="lock own">Dein Gebot ${fmt(p.myBid)}</span>` : '', p.listedBy ? `<span class="lock">Angebot von ${esc(p.listedBy)}</span>` : ''].filter(Boolean).join(' ');
   const right = o.right ?? `<b>${fmt(p.price)}</b><small>${o.rightLabel || 'Marktwert'}</small>`;
   const sub = o.sub ?? `<b>${fmt(p.points)}</b><small>Punkte</small><b>${avg(p)}</b><small>Ø Punkte</small>`;
   return `<div class="prow${o.btn ? ' hasbtn' : ''}" data-open="${p.id}" tabindex="0" role="button" aria-label="${esc(p.first + ' ' + p.last)}">
@@ -111,9 +111,9 @@ async function openPlayer(id) {
   bg.className = 'sheet-bg';
   const gain = d.boughtFor != null ? d.price - d.boughtFor : null;
   const action = d.owned
-    ? `<button class="btn sell wide" data-sell="${d.id}" ${d.locked ? 'disabled' : ''}>Verkaufen für ${fmt(d.price)}</button>`
+    ? `<button class="btn sell wide" data-sellmenu="${d.id}" ${d.locked ? 'disabled' : ''}>Verkaufen</button>`
     : d.onMarket
-      ? `<button class="btn buy wide" data-buy="${d.id}" ${d.locked ? 'disabled' : ''}>Kaufen für ${fmt(d.price)} · noch ${hoursText(d.hoursLeft)} auf dem Markt</button>`
+      ? `<button class="btn buy wide" data-bid="${d.id}" ${d.locked ? 'disabled' : ''}>${d.myBid ? 'Gebot ändern (' + fmt(d.myBid) + ')' : 'Bieten ab ' + fmt(d.listedBy ? d.minBid : d.price)} · noch ${hoursText(d.hoursLeft)}</button>`
       : '<button class="btn buy wide" disabled>Nicht auf dem Markt</button>';
   const injBlock = d.injury
     ? `<div class="chart" style="border:1px solid ${d.injury.status === 'out' ? 'var(--down)' : 'var(--yellow)'}"><b class="${d.injury.status === 'out' ? 'down' : ''}">${d.injury.status === 'out' ? 'Verletzt' : 'Fraglich'}</b><div style="color:var(--mute);font-size:13px;margin-top:4px">${esc(d.injury.text || '')}${d.injury.returnDate ? ' · Rückkehr ca. ' + esc(d.injury.returnDate) : ''}</div></div>`
@@ -143,29 +143,18 @@ async function openPlayer(id) {
   document.addEventListener('keydown', esc_);
   bg.addEventListener('click', async (e) => {
     if (e.target === bg || e.target.closest('[data-close]')) return close();
-    const b = e.target.closest('[data-buy],[data-sell]');
-    if (!b) return;
-    if (await trade(b, d)) close();
+    const bid = e.target.closest('[data-bid]');
+    if (bid) { close(); return bidSheet(d.id); }
+    const sm = e.target.closest('[data-sellmenu]');
+    if (sm) { close(); return sellSheet(d.id); }
   });
   document.body.append(bg);
-}
-
-/** Buy or sell from any button. Returns true when it worked. */
-async function trade(b, p) {
-  const buying = !!b.dataset.buy;
-  if (buying && p?.injury && !confirm(`${p.first} ${p.last} ist ${p.injury.status === 'out' ? 'verletzt' : 'fraglich'}${p.injury.text ? ' (' + p.injury.text + ')' : ''}. Trotzdem kaufen?`)) return false;
-  try {
-    await api(buying ? '/api/buy' : '/api/sell', { body: { playerId: Number(b.dataset.buy || b.dataset.sell) } });
-    toast(buying ? 'Gekauft' : 'Verkauft');
-    await refreshMe();
-    render();
-    return true;
-  } catch (err) { toast(err.message); return false; }
 }
 
 /* ---------- views ---------- */
 const subtabs = (key, items) => `<div class="subtabs">${items.map(([v, l]) => `<button data-sub="${key}:${v}" aria-selected="${S.sub[key] === v}">${l}</button>`).join('')}</div>`;
 const seg = (attr, cur, items) => `<div class="seg">${items.map(([v, l]) => `<button data-${attr}="${v}" aria-pressed="${cur === v}">${l}</button>`).join('')}</div>`;
+const MODES = [['buy', 'Bieten'], ['sell', 'Verkaufen'], ['mine', 'Meine']];
 const dayLong = (iso) => new Date(iso).toLocaleDateString('de-CH', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Europe/Zurich' });
 
 function countdown(iso) {
@@ -234,20 +223,24 @@ const views = {
     const head = '';
     const f = [['', 'Alle'], ['F', 'Stürmer'], ['D', 'Verteidiger'], ['G', 'Torhüter']];
     let list;
+    if (S.mode === 'mine') {
+      const au = await api('/api/auctions');
+      return `${bal}${auctionsHtml(au)}<div class="floatseg">${seg('mode', S.mode, MODES)}</div>`;
+    }
     if (S.mode === 'sell') {
       list = t.players.filter((p) => !S.pos || p.pos === S.pos);
-      list = `${list.length ? list.map((p) => prow(p, { btn: `<button class="plus minus" data-sell="${p.id}" ${p.locked ? 'disabled' : ''} aria-label="Verkaufen">−</button>`, rightLabel: 'Verkaufspreis' })).join('') : '<div class="empty">Keine Spieler zum Verkaufen.</div>'}`;
+      list = `${list.length ? list.map((p) => prow(p, { btn: `<button class="plus minus" data-sellmenu="${p.id}" ${p.locked ? 'disabled' : ''} aria-label="Verkaufen">−</button>`, rightLabel: 'Marktwert' })).join('') : '<div class="empty">Keine Spieler zum Verkaufen.</div>'}`;
     } else {
       const qs = new URLSearchParams({ pos: S.pos, sort: S.sort, q: S.q });
       const market = await api(`/api/players?${qs}`);
-      list = market.length ? market.map((p) => prow(p, { timer: true, owned: true, rightLabel: 'Zielpreis', btn: p.owned ? '' : `<button class="plus" data-buy="${p.id}" ${p.locked ? 'disabled' : ''} aria-label="Kaufen">+</button>` })).join('') : '<div class="empty">Keine Spieler gefunden. Falls der Markt ganz leer bleibt, wurden die NHL-Kader noch nicht geladen (siehe README: npm run sync).</div>';
+      list = market.length ? market.map((p) => prow(p, { timer: true, owned: true, rightLabel: 'Mindestgebot', btn: p.owned || p.listedBy === S.me?.name ? '' : `<button class="plus" data-bid="${p.id}" ${p.locked ? 'disabled' : ''} aria-label="Bieten">+</button>` })).join('') : '<div class="empty">Keine Spieler gefunden. Falls der Markt ganz leer bleibt, wurden die NHL-Kader noch nicht geladen (siehe README: npm run sync).</div>';
     }
     return `${head}${bal}
       <div class="row2"><input class="field" id="q" type="search" placeholder="Spieler oder Team suchen" value="${esc(S.q)}" autocomplete="off">
       <select class="field" id="sort" aria-label="Sortierung">${[['expiry', 'Läuft ab'], ['price', 'Preis'], ['change', 'Änderung'], ['points', 'Punkte'], ['live', 'Live']].map(([v, l]) => `<option value="${v}" ${S.sort === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
       <div class="tabs">${f.map(([v, l]) => `<button data-pos="${v}" aria-pressed="${S.pos === v}">${l}</button>`).join('')}</div>
       <div style="margin-top:12px">${list}</div>
-      <div class="floatseg">${seg('mode', S.mode, [['buy', 'Kaufen'], ['sell', 'Verkaufen']])}</div>`;
+      <div class="floatseg">${seg('mode', S.mode, MODES)}</div>`;
   },
 
   async league() {
@@ -316,6 +309,51 @@ function header() {
 
 async function refreshMe() { S.me = await api('/api/me'); }
 
+/* ---------- bids, offers ---------- */
+async function act(path, body, okMsg, bg) {
+  try { await api(path, { body }); toast(okMsg); bg?.remove(); await refreshMe(); render(); } catch (err) { toast(err.message); }
+}
+
+async function bidSheet(id) {
+  let d;
+  try { d = await api(`/api/players/${id}`); } catch (e) { return toast(e.message); }
+  const min = d.listedBy ? d.minBid : d.price;
+  const bg = openSheet(`<div class="shead">${avatar(d, true)}<div class="sname">${esc(d.first)} ${esc(d.last)}</div><div class="ptag">${POS[d.pos]} · ${esc(d.team)} · noch ${hoursText(d.hoursLeft)}</div></div>
+    <p style="margin-top:14px;text-align:center">${d.listedBy ? `Angebot von <b>${esc(d.listedBy)}</b>. Nur er sieht die Gebote und wählt eines aus.` : 'Wer bei Ablauf am meisten geboten hat, bekommt den Spieler. Alle Gebote sind geheim.'} Mindestgebot: <b>${fmt(min)}</b>. Dein Konto: <b>${fmt(S.me?.balance || 0)}</b>.</p>
+    <input class="field" id="bidamt" type="number" inputmode="numeric" min="${min}" step="1000" value="${d.myBid || min}" style="margin-top:10px;font-size:22px;text-align:center">
+    <button class="btn buy wide" data-place style="margin-top:12px">${d.myBid ? 'Gebot ändern' : 'Gebot abgeben'}</button>
+    ${d.myBid ? '<button class="btn sell wide" data-cancel style="margin-top:10px">Gebot zurückziehen</button>' : ''}`);
+  bg.addEventListener('click', (e) => {
+    if (e.target.closest('[data-place]')) act('/api/bid', { playerId: id, amount: Number(bg.querySelector('#bidamt').value) }, 'Gebot gespeichert', bg);
+    if (e.target.closest('[data-cancel]')) act('/api/bid/cancel', { playerId: id }, 'Gebot zurückgezogen', bg);
+  });
+}
+
+async function sellSheet(id) {
+  let d;
+  try { d = await api(`/api/players/${id}`); } catch (e) { return toast(e.message); }
+  const bg = openSheet(`<div class="shead">${avatar(d, true)}<div class="sname">${esc(d.first)} ${esc(d.last)}</div><div class="ptag">${POS[d.pos]} · ${esc(d.team)} · Marktwert ${fmt(d.price)}</div></div>
+    <button class="btn sell wide" data-now style="margin-top:18px" ${d.locked ? 'disabled' : ''}>Sofort verkaufen für ${fmt(d.price)}</button>
+    <p style="margin-top:12px;text-align:center">Oder biete ihn den anderen Managern an. Sie bieten ${RULES_HOURS} Stunden lang, nur du siehst die Angebote und wählst eines aus.</p>
+    <button class="btn buy wide" data-offer ${d.locked ? 'disabled' : ''}>Den anderen anbieten</button>
+    ${d.locked ? '<p class="note">Gesperrt: Das Team spielt heute.</p>' : ''}`);
+  bg.addEventListener('click', (e) => {
+    if (e.target.closest('[data-now]')) act('/api/sell', { playerId: id }, 'Verkauft', bg);
+    if (e.target.closest('[data-offer]')) act('/api/offer', { playerId: id }, 'Angeboten', bg);
+  });
+}
+const RULES_HOURS = 24; // keep in sync with RULES.userListingHours in config.js
+
+function auctionsHtml(au) {
+  const part = (title, body) => `<h2>${title}</h2>${body}`;
+  const bids = au.bids.length ? au.bids.map((b) => `<div class="tick" data-bid="${b.id}"><div class="ago">noch ${hoursText(b.hoursLeft)}</div><b>${esc(b.name.toUpperCase())}</b><br>Dein Gebot ${fmt(b.amount)} · Marktwert ${fmt(b.price)}</div>`).join('') : '<div class="empty">Du hast keine offenen Gebote.</div>';
+  const offers = au.offers.length ? au.offers.map((o) => `<div class="tick"><div class="ago">noch ${hoursText(o.hoursLeft)}</div><b>${esc(o.name.toUpperCase())}</b> · Marktwert ${fmt(o.price)}
+      ${o.bids.length ? o.bids.map((x) => `<div class="offer"><span>${esc(x.user)}</span><b>${fmt(x.amount)}</b><button class="btn buy" data-accept="${o.id}:${x.userId}">Annehmen</button></div>`).join('') : '<div class="note" style="margin:6px 0 0">Noch keine Angebote.</div>'}
+      <button class="link" data-canceloffer="${o.id}">Angebot zurückziehen</button></div>`).join('') : '<div class="empty">Du hast keine Spieler angeboten.</div>';
+  const results = au.results.length ? au.results.map((r) => `<div class="tick"><div class="ago">vor ${ago(r.at)}</div>${r.won ? '<b class="up">Gewonnen</b>' : '<b class="down">Verloren</b>'} · ${esc(r.name)} · Gebot ${fmt(r.amount)}</div>`).join('') : '<div class="empty">Noch keine Ergebnisse.</div>';
+  return part('Meine Gebote', bids) + part('Angebote für meine Spieler', offers) + part('Letzte Ergebnisse', results);
+}
+
 /* ---------- lineup sheets ---------- */
 async function moveTo(playerId, line, bg) {
   try { await api('/api/lineup', { body: { playerId, line } }); bg.remove(); render(); } catch (err) { toast(err.message); }
@@ -370,7 +408,9 @@ async function openRules() {
   openSheet(`<h1 class="rt">Spielregeln</h1>
     <h3>Allgemein</h3><p>Du führst ein Team aus echten NHL-Spielern. Jeder Spieler hat einen Marktwert. Wenn er in einem echten NHL-Spiel Tore, Assists und mehr erzielt, ändert sich sein Preis am nächsten Morgen. Es gibt keine Simulation: alles kommt von den echten Spielen.</p>
     <h3>Start</h3><p>Neue Manager bekommen gratis ein Team mit ${u.starter.F} Stürmern, ${u.starter.D} Verteidigern und ${u.starter.G} Torhüter sowie ein Startbudget von ${fmt(p.startBudget)}. Kader: maximal ${u.maxRoster} Spieler, davon maximal ${u.maxGoalies} Torhüter.</p>
-    <h3>Transfermarkt</h3><p>Auf dem Markt stehen ${u.marketSlots} Spieler. Jede Stunde verlässt einer den Markt und ein neuer kommt. Jeder Spieler bleibt ${u.marketHours} Stunden. Verletzte Spieler werden vom Markt genommen. Kaufen und Verkaufen geht zum aktuellen Marktwert.</p>
+    <h3>Transfermarkt</h3><p>Auf dem Markt stehen ${u.marketSlots} Spieler. Jede Stunde verlässt einer den Markt und ein neuer kommt. Jeder Spieler bleibt ${u.marketHours} Stunden. Verletzte Spieler werden vom Markt genommen.</p>
+    <h3>Bieten</h3><p>Du kaufst per geheimem Gebot, mindestens zum Marktwert. Du kannst dein Gebot bis zum Ablauf ändern oder zurückziehen. Wer bei Ablauf am meisten geboten hat, bekommt den Spieler und zahlt sein Gebot (bei Gleichstand gewinnt das frühere Gebot). Wer verliert, zahlt nichts. Niemand sieht, wer wie viel geboten hat.</p>
+    <h3>Verkaufen</h3><p>Du kannst einen Spieler sofort zum Marktwert verkaufen. Oder du bietest ihn den anderen Managern ${u.userListingHours} Stunden lang an. Sie bieten, nur du siehst die Angebote und nimmst eines an.</p>
     <h3>Sperre</h3><p>Sobald das Team eines Spielers spielt, ist er bis zum Tagesabschluss gesperrt. Er kann weder gekauft noch verkauft werden.</p>
     <h3>Live-Punkte</h3><p>Während der Spiele zählen die echten Ereignisse live:</p><ul class="rl">
     ${line('Tor', s.goal)}${line('Assist', s.assist)}${line('Schuss aufs Tor', s.shot)}${line('Geblockter Schuss', s.blocked)}${line('Strafminute', s.pim)}${line('Plus/Minus (pro Punkt)', s.plusMinus)}
@@ -412,13 +452,14 @@ document.addEventListener('submit', async (e) => {
 document.addEventListener('click', async (e) => {
   const t = e.target;
   if (t.closest('.sheet')) return;
-  const buy = t.closest('[data-buy],[data-sell]');
-  if (buy) {
-    e.stopPropagation();
-    let p = null;
-    if (buy.dataset.buy) { try { p = await api(`/api/players/${buy.dataset.buy}`); } catch { /* ignore */ } }
-    return trade(buy, p);
-  }
+  const bidBtn = t.closest('[data-bid]');
+  if (bidBtn) return bidSheet(Number(bidBtn.dataset.bid));
+  const sellBtn = t.closest('[data-sellmenu]');
+  if (sellBtn) return sellSheet(Number(sellBtn.dataset.sellmenu));
+  const acc = t.closest('[data-accept]');
+  if (acc) { const [pid, uid] = acc.dataset.accept.split(':').map(Number); return act('/api/accept', { playerId: pid, bidderId: uid }, 'Verkauft'); }
+  const cn = t.closest('[data-canceloffer]');
+  if (cn) return act('/api/offer/cancel', { playerId: Number(cn.dataset.canceloffer) }, 'Angebot zurückgezogen');
   const open = t.closest('[data-open]');
   if (open) return openPlayer(open.dataset.open);
   const tab = t.closest('nav.bar button');

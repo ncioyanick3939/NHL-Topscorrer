@@ -105,7 +105,12 @@ async function api(req, res, url) {
     case 'GET /api/ticker': return send(res, 200, game.ticker());
     case 'GET /api/topscorers': return send(res, 200, game.topscorers(user.id, { pos: q.get('pos') }));
     case 'GET /api/moves': return send(res, 200, game.recentMoves());
-    case 'POST /api/buy': return send(res, 200, game.buy(user.id, Number((await body(req)).playerId)));
+    case 'GET /api/auctions': return send(res, 200, game.auctions(user.id));
+    case 'POST /api/bid': { const b = await body(req); return send(res, 200, game.placeBid(user.id, Number(b.playerId), b.amount)); }
+    case 'POST /api/bid/cancel': return send(res, 200, game.cancelBid(user.id, Number((await body(req)).playerId)));
+    case 'POST /api/offer': return send(res, 200, game.offerPlayer(user.id, Number((await body(req)).playerId)));
+    case 'POST /api/offer/cancel': return send(res, 200, game.cancelOffer(user.id, Number((await body(req)).playerId)));
+    case 'POST /api/accept': { const b = await body(req); return send(res, 200, game.acceptBid(user.id, Number(b.playerId), Number(b.bidderId))); }
     case 'POST /api/lineup': { const b = await body(req); return send(res, 200, game.setLineup(user.id, Number(b.playerId), Number(b.line))); }
     case 'POST /api/sell': return send(res, 200, game.sell(user.id, Number((await body(req)).playerId)));
   }

@@ -1,5 +1,6 @@
 import { db, tx } from './db.js';
 import { RULES } from './config.js';
+import { resolveMarket, expireUserListings, isLocked, dropBids } from './auction.js';
 
 const HOUR = 3_600_000;
 
@@ -28,6 +29,7 @@ const insert = (playerId, expires) =>
  */
 export function refreshMarket(now = new Date()) {
   return tx(() => {
+    expireUserListings(now);
     const total = db.prepare('SELECT COUNT(*) AS n FROM market_listings').get().n;
     if (total === 0) {
       // First start: fill the market with offers that leave one per hour.
@@ -41,6 +43,9 @@ export function refreshMarket(now = new Date()) {
     const expired = db.prepare('SELECT player_id, expires_at FROM market_listings WHERE expires_at <= ? ORDER BY expires_at')
       .all(now.toISOString());
     for (const e of expired) {
+      // A player whose team plays today cannot change hands yet: his auction is settled once the day is closed.
+      if (isLocked(e.player_id) && db.prepare('SELECT 1 FROM bids WHERE player_id = ?').get(e.player_id)) continue;
+      resolveMarket(e.player_id);
       db.prepare('DELETE FROM market_listings WHERE player_id = ?').run(e.player_id);
       // The replacement keeps the hourly rhythm: it leaves 48 hours after the offer it replaces.
       let next = new Date(e.expires_at).getTime() + RULES.marketHours * HOUR;
@@ -53,6 +58,7 @@ export function refreshMarket(now = new Date()) {
                             WHERE p.injury_status = 'out'`).all();
     for (const o of out) {
       db.prepare('DELETE FROM market_listings WHERE player_id = ?').run(o.player_id);
+      dropBids(o.player_id);
       const id = pickPlayer();
       if (id != null) insert(id, new Date(o.expires_at));
     }
