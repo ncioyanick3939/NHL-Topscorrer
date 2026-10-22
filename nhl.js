@@ -264,6 +264,13 @@ const upsertGame = db.prepare(`
 
 export async function syncSchedule() {
   const games = parseSchedule(await fetchJson('/schedule/now'));
+  // Also look 1 and 2 weeks ahead so the next games (for example after a break) show up early. Optional: errors are ignored.
+  for (const days of [7, 14]) {
+    try {
+      const d = new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
+      games.push(...parseSchedule(await fetchJson(`/schedule/${d}`)));
+    } catch { /* the main schedule is enough */ }
+  }
   tx(() => { for (const g of games) upsertGame.run(g); });
   return games.length;
 }

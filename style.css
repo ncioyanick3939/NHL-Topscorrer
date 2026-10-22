@@ -183,4 +183,4 @@ h1.rt{font-family:var(--f-display);font-size:34px;text-transform:uppercase;margi
 .sheet p{font-size:14px;line-height:1.55;color:#d3d9e6;margin:0 0 8px}
 ul.rl{list-style:none;margin:6px 0;padding:0;columns:1}
 ul.rl li{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--line);font-size:14px}
-nav.bar button{font-size:10px}
+nav.bar button{font-size:10px;padding:9px 0}nav.bar svg{width:20px;height:20px}

@@ -91,6 +91,7 @@ async function api(req, res, url) {
       game.destroySession(token);
       return send(res, 200, { ok: true }, { 'Set-Cookie': 'sid=; HttpOnly; Path=/; Max-Age=0' });
     case 'GET /api/me': {
+      game.ensureStarterTeam(user.id); // accounts made before the starter team existed get it now
       const team = game.myTeam(user.id);
       const rank = game.league(user.id).findIndex((r) => r.me) + 1;
       return send(res, 200, { name: user.name, balance: team.balance, value: team.value, points: team.points, rank, count: team.players.length });

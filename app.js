@@ -12,7 +12,7 @@ const TEAM_COLORS = {
 };
 const POS = { F: 'Stürmer', D: 'Verteidiger', G: 'Torhüter' };
 
-const S = { tab: 'board', sub: { team: 'market', league: 'rank', nhl: 'games', live: 'play' }, mode: 'buy', me: null, pos: '', sort: 'expiry', q: '', top: '', timer: null, cd: null };
+const S = { tab: 'board', sub: { league: 'rank', nhl: 'games', live: 'play' }, mode: 'buy', me: null, pos: '', sort: 'expiry', q: '', top: '', timer: null, cd: null };
 
 /* ---------- helpers ---------- */
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -198,16 +198,21 @@ const views = {
   },
 
   async team() {
-    const sub = S.sub.team;
-    const head = subtabs('team', [['market', 'Transfermarkt'], ['roster', 'Kader']]);
+    const head = '';
     const t = await api('/api/team');
     const bal = `<div class="balbar"><span>Kontostand</span><b>${fmt(t.balance)}</b><span>Kader ${t.players.length}/20</span></div>`;
-    if (sub === 'roster') {
+    {
       const groups = [['G', 'Torhüter'], ['D', 'Verteidiger'], ['F', 'Stürmer']];
       const g = t.value - t.invested;
       return `${head}${bal}<div class="tiles"><div class="tile"><b>${fmt(t.value / 1000)}k</b><span>Teamwert</span></div><div class="tile"><b class="${g >= 0 ? 'up' : 'down'}">${g >= 0 ? '+' : '−'}${fmt(Math.abs(g) / 1000)}k</b><span>Gewinn</span></div><div class="tile"><b>${fmt(t.points)}</b><span>Punkte</span></div></div>
         ${t.players.length ? groups.map(([k, l]) => { const ps = t.players.filter((p) => p.pos === k); return ps.length ? `<div class="grp">${l}</div>${ps.map((p) => prow(p)).join('')}` : ''; }).join('') : '<div class="empty">Noch keine Spieler. Kaufe welche im Transfermarkt.</div>'}`;
     }
+  },
+
+  async market() {
+    const t = await api('/api/team');
+    const bal = `<div class="balbar"><span>Kontostand</span><b>${fmt(t.balance)}</b><span>Kader ${t.players.length}/20</span></div>`;
+    const head = '';
     const f = [['', 'Alle'], ['F', 'Stürmer'], ['D', 'Verteidiger'], ['G', 'Torhüter']];
     let list;
     if (S.mode === 'sell') {
