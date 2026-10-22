@@ -291,6 +291,19 @@ export function myTeam(userId) {
   return { players, balance: u.balance, points: u.points, value, invested };
 }
 
+/** Public view of another manager's team: squad, lineup, points. Everybody in the league may look. */
+export function managerTeam(targetId) {
+  const u = db.prepare('SELECT id, name, balance, points FROM users WHERE id = ?').get(targetId);
+  if (!u) throw new HttpError(404, 'Manager nicht gefunden.');
+  const rows = db.prepare(`${SELECT_PLAYER} JOIN roster r ON r.player_id = p.id WHERE r.user_id = ? ORDER BY p.price DESC`).all(targetId);
+  const owned = ownedSet(targetId);
+  const lineup = new Map(db.prepare('SELECT player_id, lineup FROM roster WHERE user_id = ?').all(targetId).map((r) => [r.player_id, r.lineup]));
+  const players = rows.map((p) => ({ ...shape(p, owned), lineup: lineup.get(p.id) ?? 0 }));
+  const live = db.prepare(`SELECT COALESCE(SUM(ds.pts), 0) AS s FROM roster r JOIN day_stats ds ON ds.player_id = r.player_id
+    WHERE r.user_id = ? AND r.lineup > 0 AND ds.day NOT IN (SELECT day FROM days)`).get(targetId).s;
+  return { id: u.id, name: u.name, points: u.points + live, live, value: players.reduce((s, p) => s + p.price, 0), count: players.length, players };
+}
+
 export function league(userId) {
   autoFillAll();
   const rows = db.prepare(`SELECT u.id, u.name, u.balance, u.points,

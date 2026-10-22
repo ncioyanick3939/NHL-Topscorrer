@@ -428,3 +428,7 @@ body{min-height:100vh;min-height:calc(100dvh + 1px)}
 .tip{display:flex;gap:10px;align-items:flex-start;justify-content:space-between;background:var(--navy-2);border:1px solid var(--yellow);border-radius:14px;padding:12px 14px;margin:14px 0}
 .tip b{display:block;margin-bottom:3px}.tip small{display:block;color:var(--mute);font-size:13px;line-height:1.4}.tip small b{display:inline;color:#fff}
 .tip .x{background:none;border:0;color:var(--mute);font-size:18px;padding:0 2px;cursor:pointer}
+
+.rank[data-manager]{cursor:pointer}
+.mseg{display:flex;margin:12px 0}.mseg button{flex:1;background:none;border:0;color:var(--mute);font:600 14px var(--f-body);padding:10px 0;border-radius:12px;cursor:pointer}.mseg button[aria-selected=true]{background:var(--navy-2);color:var(--yellow)}
+.slot.empty .plusc:empty{border-style:solid;opacity:.4}

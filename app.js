@@ -361,7 +361,7 @@ const views = {
     }
     const rows = await api('/api/league');
     return `${head}<div class="rhead"><span>Teamwert</span><span>Punkte</span></div>
-      ${rows.map((r, i) => `<div class="rank${r.me ? ' me' : ''}"><div class="n">${i + 1}.</div><div class="grow"><div class="rname">${esc(r.name)}</div></div><div class="rv">${fmt(r.value)}</div><div class="rp">${fmt(r.points)}${r.live ? `<small>+${r.live} heute</small>` : ''}</div></div>`).join('')}`;
+      ${rows.map((r, i) => `<div class="rank${r.me ? ' me' : ''}" data-manager="${r.id}" role="button" tabindex="0"><div class="n">${i + 1}.</div><div class="grow"><div class="rname">${esc(r.name)}</div></div><div class="rv">${fmt(r.value)}</div><div class="rp">${fmt(r.points)}${r.live ? `<small>+${r.live} heute</small>` : ''}</div></div>`).join('')}`;
   },
 
   async live() {
@@ -372,7 +372,7 @@ const views = {
     if (S.sub.live === 'league') {
       const board = [...lg].sort((x, y) => y.live - x.live || y.points - x.points);
       return `${head}${top}<div class="rhead"><span>Gesamt</span><span>Heute</span></div>
-        ${board.map((r, i) => `<div class="rank${r.me ? ' me' : ''}"><div class="n">${i + 1}.</div><div class="grow"><div class="rname">${esc(r.name)}${r.me ? ' (du)' : ''}</div></div><div class="rv">${fmt(r.points - r.live)}</div><div class="rp ${r.live > 0 ? 'up' : ''}">${r.live > 0 ? '+' : ''}${r.live}</div></div>`).join('')}
+        ${board.map((r, i) => `<div class="rank${r.me ? ' me' : ''}" data-manager="${r.id}" role="button" tabindex="0"><div class="n">${i + 1}.</div><div class="grow"><div class="rname">${esc(r.name)}${r.me ? ' (du)' : ''}</div></div><div class="rv">${fmt(r.points - r.live)}</div><div class="rp ${r.live > 0 ? 'up' : ''}">${r.live > 0 ? '+' : ''}${r.live}</div></div>`).join('')}
         <div class="note">So viele Punkte machen alle Manager heute mit ihrer Aufstellung. Die Zahlen laufen live mit den Spielen.</div>`;
     }
     const pts = new Map(d.mine.map((r) => [r.id, r]));
@@ -460,6 +460,34 @@ function header() {
 }
 
 async function refreshMe() { S.me = await api('/api/me'); }
+
+/* ---------- another manager's team ---------- */
+async function managerSheet(id) {
+  let m;
+  try { m = await api(`/api/managers/${id}`); } catch (e) { return toast(e.message); }
+  let line = 1;
+  const placed = m.players.filter((p) => p.lineup > 0).length;
+  const bench = m.players.filter((p) => p.lineup === 0);
+  const slot = (pos, ln, i) => {
+    const p = m.players.filter((x) => x.pos === pos && x.lineup === ln)[i];
+    const posName = { F: 'Stürmer', D: 'Verteidiger', G: 'Torhüter' }[pos];
+    return p ? `<button class="slot" data-open="${p.id}" aria-label="${esc(p.first + ' ' + p.last)}">${avatar(p)}<span class="sn">${esc(p.last)}</span>${p.injury ? '<i class="sx">!</i>' : ''}</button>`
+      : `<div class="slot empty"><span class="plusc"></span><span class="sn">${posName}</span></div>`;
+  };
+  const body = () => `<div class="ice">${RINK}<div class="lrow">${slot('F', line, 0)}</div><div class="lrow">${slot('F', line, 1)}${slot('F', line, 2)}</div><div class="lrow">${slot('D', line, 0)}${slot('D', line, 1)}</div><div class="lrow g">${slot('G', 9, 0)}</div></div>
+    <div class="seg mseg">${[1, 2, 3].map((n) => `<button data-mline="${n}" aria-selected="${n === line}">${n}. Linie</button>`).join('')}</div>
+    ${bench.length ? `<div class="grp">Bank</div>${bench.map((p) => prow(p)).join('')}` : ''}`;
+  const bg = openSheet(`<div class="shead"><div class="sname">${esc(m.name)}</div><div class="ptag">${placed}/16 in der Aufstellung · ${m.count} Spieler</div></div>
+    <div class="big3 small"><div><b>${fmt(m.points)}</b><span>Punkte</span></div><div><b class="${m.live > 0 ? 'up' : ''}">${m.live > 0 ? '+' : ''}${m.live}</b><span>Heute</span></div><div><b>${fmt(m.value / 1000)}k</b><span>Teamwert</span></div></div>
+    <div id="mbody">${body()}</div>`);
+  bg.querySelector('.sheet').classList.add('center');
+  bg.addEventListener('click', (e) => {
+    const ml = e.target.closest('[data-mline]');
+    if (ml) { line = Number(ml.dataset.mline); bg.querySelector('#mbody').innerHTML = body(); return; }
+    const op = e.target.closest('[data-open]');
+    if (op) openPlayer(op.dataset.open);
+  });
+}
 
 /* ---------- game detail ---------- */
 const PERIOD = (e) => (e.periodType === 'SO' ? 'Penaltyschiessen' : e.periodType === 'OT' ? 'Verlängerung' : `${e.period}. Drittel`);
@@ -704,6 +732,8 @@ document.addEventListener('click', async (e) => {
   const mode = t.closest('[data-mode]');
   if (mode && mode.closest('.seg')) { S.mode = mode.dataset.mode; return render(); }
   if (mode) return showAuth(mode.dataset.mode);
+  const mg = t.closest('[data-manager]');
+  if (mg) return managerSheet(Number(mg.dataset.manager));
   const gm = t.closest('[data-game]');
   if (gm) return gameSheet(Number(gm.dataset.game));
   const gsub = t.closest('[data-gsub]');

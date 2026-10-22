@@ -134,6 +134,8 @@ async function api(req, res, url) {
     const detail = game.playerDetail(user.id, Number(m[1]));
     return send(res, 200, detail); // instant; the NHL game log comes separately so the sheet opens at once
   }
+  const mm = url.pathname.match(/^\/api\/managers\/(\d+)$/);
+  if (mm && req.method === 'GET') return send(res, 200, game.managerTeam(Number(mm[1])));
   const mg = url.pathname.match(/^\/api\/players\/(\d+)\/games$/);
   if (mg && req.method === 'GET') {
     const recent = await getGameLog(Number(mg[1])); // real last games from the NHL, null if unavailable
