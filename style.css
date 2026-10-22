@@ -416,7 +416,7 @@ body{min-height:100vh;min-height:calc(100dvh + 1px)}
 .tside small{display:block;color:var(--mute);font-size:11px;text-transform:uppercase;letter-spacing:.04em;margin-top:2px}
 .tt{font:800 14px var(--f-display);letter-spacing:.04em;text-transform:uppercase}
 .tt.goal{color:var(--yellow)}.tt.pen{color:var(--down)}
-.lrow{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
+.glrow{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
 .lp{display:flex;align-items:center;gap:10px;min-width:0}
 .lp.r{flex-direction:row;justify-content:flex-end;text-align:right}
 .lph{position:relative;width:46px;height:46px;border-radius:50%;flex:none;display:grid;place-items:center;font:700 14px var(--f-display);overflow:visible}

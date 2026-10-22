@@ -259,7 +259,7 @@ function trendHtml(t, full) {
 const subtabs = (key, items) => `<div class="subtabs">${items.map(([v, l]) => `<button data-sub="${key}:${v}" aria-selected="${S.sub[key] === v}">${l}</button>`).join('')}</div>`;
 const seg = (attr, cur, items) => `<div class="seg">${items.map(([v, l]) => `<button data-${attr}="${v}" aria-pressed="${cur === v}">${l}</button>`).join('')}</div>`;
 const TEAMTABS = () => subtabs('team', [['market', 'Transfermarkt'], ['roster', 'Kader'], ['lineup', 'Aufstellung']]);
-const RINK = '<svg class="rink" viewBox="0 0 360 560" preserveAspectRatio="none" aria-hidden="true"><rect x="3" y="3" width="354" height="554" rx="46" fill="none" stroke="#fff" stroke-opacity=".16" stroke-width="3"/><line x1="4" y1="16" x2="356" y2="16" stroke="#e5384f" stroke-opacity=".6" stroke-width="4"/><circle cx="180" cy="16" r="54" fill="none" stroke="#3d7bff" stroke-opacity=".5" stroke-width="3"/><line x1="4" y1="268" x2="356" y2="268" stroke="#3d7bff" stroke-opacity=".5" stroke-width="6"/><circle cx="116" cy="336" r="56" fill="none" stroke="#e5384f" stroke-opacity=".42" stroke-width="3"/><circle cx="244" cy="336" r="56" fill="none" stroke="#e5384f" stroke-opacity=".42" stroke-width="3"/><line x1="4" y1="540" x2="356" y2="540" stroke="#e5384f" stroke-opacity=".6" stroke-width="3"/><path d="M146 540a34 34 0 0168 0z" fill="#3d7bff" fill-opacity=".25" stroke="#3d7bff" stroke-opacity=".6" stroke-width="2"/></svg>';
+const RINK = '<svg class="rink" viewBox="0 0 360 560" preserveAspectRatio="none" aria-hidden="true"><rect x="3" y="3" width="354" height="554" rx="46" fill="none" stroke="#fff" stroke-opacity=".16" stroke-width="3"/><line x1="4" y1="16" x2="356" y2="16" stroke="#e5384f" stroke-opacity=".6" stroke-width="4"/><circle cx="180" cy="16" r="54" fill="none" stroke="#3d7bff" stroke-opacity=".5" stroke-width="3"/><line x1="4" y1="268" x2="356" y2="268" stroke="#3d7bff" stroke-opacity=".5" stroke-width="6"/><line x1="4" y1="540" x2="356" y2="540" stroke="#e5384f" stroke-opacity=".6" stroke-width="3"/><path d="M146 540a34 34 0 0168 0z" fill="#3d7bff" fill-opacity=".25" stroke="#3d7bff" stroke-opacity=".6" stroke-width="2"/></svg>';
 const MODES = [['buy', 'Bieten'], ['sell', 'Verkaufen'], ['mine', 'Meine']];
 const dayLong = (iso) => new Date(iso).toLocaleDateString('de-CH', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Europe/Zurich' });
 
@@ -479,7 +479,7 @@ function lineupHtml(ev) {
   const H = ev.lineup.home, A = ev.lineup.away;
   const stamp = (side, ab) => ['goalies', 'defense', 'forwards'].forEach((k) => side[k].forEach((p) => { p.team = ab; }));
   stamp(H, ev.home.abbrev); stamp(A, ev.away.abbrev);
-  const rows = (l, r) => { const n = Math.max(l.length, r.length); let out = ''; for (let i = 0; i < n; i++) out += `<div class="lrow">${lineupCell(l[i])}${lineupCell(r[i], true)}</div>`; return out; };
+  const rows = (l, r) => { const n = Math.max(l.length, r.length); let out = ''; for (let i = 0; i < n; i++) out += `<div class="glrow">${lineupCell(l[i])}${lineupCell(r[i], true)}</div>`; return out; };
   let out = '';
   if (H.goalies.length || A.goalies.length) out += `<div class="dayhead bar">Torhüter</div>${rows(H.goalies, A.goalies)}`;
   for (let i = 0; i < 4; i++) {
