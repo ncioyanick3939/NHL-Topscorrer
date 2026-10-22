@@ -163,8 +163,8 @@ async function openPlayer(id) {
     ${priceChart(d)}
     ${transferTimeline(d)}
     ${gamesListHtml(d.recent)}
-    <h2>Preisänderungen</h2>
-    ${d.log.length ? `<ul class="log">${d.log.map((l) => `<li><div>${esc(l.day)}<small>${esc(l.summary || '')}</small></div><div style="text-align:right"><b>${l.pts > 0 ? '+' : ''}${l.pts} Pkt</b><small>${fmt(l.price)}</small></div></li>`).join('')}</ul>` : '<div class="empty">Noch keine Preisänderung. Sie kommt nach dem ersten abgeschlossenen Spieltag.</div>'}
+    <details class="fold"><summary><h2>Preisänderungen${d.log.length ? ` <small>${d.log.length}</small>` : ''}</h2></summary>
+    ${d.log.length ? `<ul class="log">${d.log.map((l) => `<li><div>${esc(l.day)}<small>${esc(l.summary || '')}</small></div><div style="text-align:right"><b>${l.pts > 0 ? '+' : ''}${l.pts} Pkt</b><small>${fmt(l.price)}</small></div></li>`).join('')}</ul>` : '<div class="empty">Noch keine Preisänderung. Sie kommt nach dem ersten abgeschlossenen Spieltag.</div>'}</details>
     ${action}${lockInfo}</div>`;
   const close = () => { bg.remove(); document.removeEventListener('keydown', esc_); };
   const esc_ = (e) => { if (e.key === 'Escape') close(); };
@@ -201,7 +201,7 @@ function gamesListHtml(log) {
   if (!log || !log.length) return '';
   const chrono = [...log].reverse();
   const list = log.map((g, k) => `<li><div><b>${chrono.length - k}. Spiel</b> · ${g.home ? 'vs' : '@'} ${esc(g.opp)} ${res(g)}<small>${dm(g.date)} · ${esc(g.text)}</small></div><div style="text-align:right"><b>${g.pts} Pkt</b></div></li>`).join('');
-  return `<h2>Punkte pro Spiel <small>${chrono.length} Spiele</small></h2><ul class="log">${list}</ul>`;
+  return `<details class="fold" open><summary><h2>Punkte pro Spiel <small>${chrono.length} Spiele</small></h2></summary><ul class="log">${list}</ul></details>`;
 }
 
 /** Price curve with axis labels, like Topscorers. */

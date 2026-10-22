@@ -375,3 +375,11 @@ body{min-height:100vh;min-height:calc(100dvh + 1px)}
 .tl{display:grid;justify-items:center;gap:2px;min-width:84px;padding-top:6px}
 .tl span{color:var(--mute);font-size:20px;line-height:1}.tl b{color:var(--yellow);font:700 14px var(--f-display)}.tl small{font-size:10px;color:var(--mute)}
 .big3.small b{font-size:19px;white-space:nowrap}.big3.small b i{font-style:normal;font-size:13px}
+
+/* collapsible sections */
+.fold>summary{list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;-webkit-tap-highlight-color:transparent}
+.fold>summary::-webkit-details-marker{display:none}
+.fold>summary h2{margin:0;flex:1}
+.fold>summary::after{content:"";width:9px;height:9px;border-right:2.5px solid var(--yellow,#ffc400);border-bottom:2.5px solid var(--yellow,#ffc400);transform:rotate(45deg);margin:0 6px 4px 10px;transition:transform .2s}
+.fold[open]>summary::after{transform:rotate(-135deg);margin-bottom:-2px}
+.fold>summary{padding:14px 0 6px}
