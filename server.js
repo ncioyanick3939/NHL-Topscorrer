@@ -23,7 +23,7 @@ async function loadInvite() {
 }
 const INVITE = await loadInvite();
 
-const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon' };
+const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.webmanifest': 'application/manifest+json', '.ico': 'image/x-icon' };
 
 const attempts = new Map(); // ip -> [timestamps]
 function tooManyLogins(ip) {
@@ -136,7 +136,8 @@ async function api(req, res, url) {
 }
 
 // Only these three files are public. Code, database and invite code live in the same folder and must never be served.
-const STATIC = { '/': 'index.html', '/index.html': 'index.html', '/style.css': 'style.css', '/app.js': 'app.js' };
+const STATIC = { '/': 'index.html', '/index.html': 'index.html', '/style.css': 'style.css', '/app.js': 'app.js',
+  '/manifest.webmanifest': 'manifest.webmanifest', '/icon-192.png': 'icon-192.png', '/icon-512.png': 'icon-512.png', '/apple-touch-icon.png': 'apple-touch-icon.png' };
 
 async function serveStatic(req, res, url) {
   const name = STATIC[url.pathname];
