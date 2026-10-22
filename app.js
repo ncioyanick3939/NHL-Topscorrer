@@ -17,6 +17,10 @@ const S = { scrollNext: false, wantNext: false, gsub: 'up', line: 1, team: null,
 /* ---------- helpers ---------- */
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fmt = (n) => Math.round(n).toLocaleString('de-CH');
+/** Short money: 2.35 Mio, 840k */
+const money = (n) => (Math.abs(n) >= 1e6 ? `${(n / 1e6).toFixed(2)} Mio` : `${fmt(n / 1000)}k`);
+/** NHL season of today, e.g. "26/27" (a new season starts in September). */
+const seasonLabel = (() => { const d = new Date(); const y = d.getFullYear() % 100 - (d.getMonth() < 8 ? 1 : 0); return `${String(y).padStart(2, '0')}/${String(y + 1).padStart(2, '0')}`; })();
 const pct = (p) => (p.prev ? ((p.price - p.prev) / p.prev) * 100 : 0);
 const cls = (p) => (p.price > p.prev ? 'up' : p.price < p.prev ? 'down' : 'flat');
 const arrow = (c) => (c === 'up' ? '▲' : c === 'down' ? '▼' : '–');
@@ -52,8 +56,10 @@ function toast(msg) {
   const el = document.createElement('div');
   el.className = 'toast';
   el.textContent = msg;
+  el.setAttribute('role', 'status');
+  document.querySelectorAll('.toast').forEach((t) => t.remove());
   document.body.append(el);
-  setTimeout(() => el.remove(), 2600);
+  setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 260); }, 2600);
 }
 
 document.addEventListener('error', (e) => {
@@ -150,7 +156,7 @@ async function openPlayer(id) {
   const live = d.live ? `<div class="chart"><b>Heute live: ${d.live.pts} Punkte</b><div style="color:var(--mute);font-size:13px;margin-top:4px">${d.live.goals} Tore, ${d.live.assists} Assists, ${d.live.shots} Schüsse. Voraussichtlicher Preis morgen: <b>${fmt(d.tomorrow)}</b></div></div>` : '';
   const trans = d.transfers?.length
     ? `<h2>Transfers</h2><ul class="log">${d.transfers.map((t) => `<li><div>${esc(t.user)} ${t.kind === 'buy' ? 'kauft' : 'verkauft'}<small>vor ${ago(t.at)}</small></div><div style="text-align:right"><b>${fmt(t.price)}</b></div></li>`).join('')}</ul>` : '';
-  bg.innerHTML = `<div class="sheet center" role="dialog" aria-label="${esc(d.first + ' ' + d.last)}">
+  bg.innerHTML = `<div class="sheet center" role="dialog" aria-modal="true" tabindex="-1" aria-label="${esc(d.first + ' ' + d.last)}">
     <button class="close" data-close aria-label="Schliessen">✕</button>
     <div class="wmlogo">${logo(d.team)}</div><div class="shead">${logo(d.team)}<div class="sname">${esc(d.first)} ${esc(d.last)}</div><div class="ptag">#${d.number ?? '–'} · ${POS[d.pos]} · ${esc(d.team)}</div></div>
     <div class="photo"><div class="wm">${esc(d.number ?? '')}</div>${avatar(d, true)}</div>
@@ -166,9 +172,7 @@ async function openPlayer(id) {
     <details class="fold"><summary><h2>Preisänderungen${d.log.length ? ` <small>${d.log.length}</small>` : ''}</h2></summary>
     ${d.log.length ? `<ul class="log">${d.log.map((l) => `<li><div>${esc(l.day)}<small>${esc(l.summary || '')}</small></div><div style="text-align:right"><b>${l.pts > 0 ? '+' : ''}${l.pts} Pkt</b><small>${fmt(l.price)}</small></div></li>`).join('')}</ul>` : '<div class="empty">Noch keine Preisänderung. Sie kommt nach dem ersten abgeschlossenen Spieltag.</div>'}</details>
     ${action}${lockInfo}</div>`;
-  const close = () => { bg.remove(); document.removeEventListener('keydown', esc_); };
-  const esc_ = (e) => { if (e.key === 'Escape') close(); };
-  document.addEventListener('keydown', esc_);
+  const close = () => closeSheet(bg);
   bg.addEventListener('click', async (e) => {
     if (e.target === bg || e.target.closest('[data-close]')) return close();
     const bid = e.target.closest('[data-bid]');
@@ -176,7 +180,7 @@ async function openPlayer(id) {
     const sm = e.target.closest('[data-sellmenu]');
     if (sm) { close(); return sellSheet(d.id); }
   });
-  document.body.append(bg);
+  mountSheet(bg);
   api(`/api/players/${d.id}/games`).then((g) => {
     const a = bg.querySelector('#g1'), b = bg.querySelector('#g2');
     if (!a) return;
@@ -202,7 +206,7 @@ function gamesHtml(log, err, d) {
     const score = r ? (g.home ? `${r.own}:${r.opp}` : `${r.opp}:${r.own}`) : '';
     return `<div class="gcol"><div class="gbar"><i class="${hot ? 'hot' : ''}${g.pts < 0 ? ' neg' : ''}" style="height:${h}px"></i></div><b>${g.pts}</b><div class="glogos">${logo(left)}${logo(right)}</div><small>${score}</small></div>`;
   }).join('');
-  return `<div class="gwrap"><div class="gcols" data-scrollend>${cols}</div><div class="season"><span>Saison 26/27</span><b>${fmt(d.points)}</b><small>Punkte</small><b>${avg(d)}</b><small>Ø</small><b>${d.games}</b><small>Spiele</small></div></div>`;
+  return `<div class="gwrap"><div class="gcols" data-scrollend>${cols}</div><div class="season"><span>Saison ${seasonLabel}</span><b>${fmt(d.points)}</b><small>Punkte</small><b>${avg(d)}</b><small>Ø</small><b>${d.games}</b><small>Spiele</small></div></div>`;
 }
 function gamesListHtml(log) {
   if (!log || !log.length) return '';
@@ -241,7 +245,7 @@ function transferTimeline(d) {
     parts.push(`<div class="tl"><span>⇄</span><b>${fmt(t.price)}</b><small>${date(t.at)}</small></div>`);
     parts.push(t.kind === 'buy' ? node(t.user, false) : node('', true));
   }
-  return `<div class="thist"><div class="thead">Transfers</div><div class="trow">${parts.join('')}</div></div>`;
+  return `<div class="thist"><div class="thead">Transfers</div><div class="tline">${parts.join('')}</div></div>`;
 }
 
 /** Market trend card: last change, live forecast, biggest movers. */
@@ -256,6 +260,7 @@ function trendHtml(t, full) {
 }
 
 /* ---------- views ---------- */
+const medal = (i) => (i < 3 ? ` m${i + 1}` : '');
 const subtabs = (key, items) => `<div class="subtabs">${items.map(([v, l]) => `<button data-sub="${key}:${v}" aria-selected="${S.sub[key] === v}">${l}</button>`).join('')}</div>`;
 const seg = (attr, cur, items) => `<div class="seg">${items.map(([v, l]) => `<button data-${attr}="${v}" aria-pressed="${cur === v}">${l}</button>`).join('')}</div>`;
 const TEAMTABS = () => subtabs('team', [['market', 'Transfermarkt'], ['roster', 'Kader'], ['lineup', 'Aufstellung']]);
@@ -283,8 +288,8 @@ const views = {
     const hurt = team.players.filter((p) => p.injury || p.missedLast);
     const running = live.games.filter((g) => g.state === 'LIVE' || g.state === 'CRIT').length;
     return `<section class="hero"><div class="lbl">Teamwert</div><div class="big">${fmt(team.value)}</div>
-      <span class="pill ${gc}">${arrow(gc)} ${gain >= 0 ? '+' : '−'}${fmt(Math.abs(gain))} seit Kauf</span></section>
-      <div class="tiles"><div class="tile"><b>${S.me.rank}.</b><span>Rang</span></div><div class="tile"><b>${fmt(team.points + live.myPoints)}</b><span>Punkte</span></div><div class="tile"><b>${fmt(team.balance / 1000)}k</b><span>Konto</span></div></div>
+      <span class="pill ${gc}">${gain ? `${arrow(gc)} ${gain > 0 ? '+' : '−'}${fmt(Math.abs(gain))} seit Kauf` : 'Unverändert seit Kauf'}</span></section>
+      <div class="tiles"><div class="tile"><b>${S.me.rank}.</b><span>Rang</span></div><div class="tile"><b>${fmt(team.points + live.myPoints)}</b><span>Punkte</span></div><div class="tile"><b>${money(team.balance)}</b><span>Konto</span></div></div>
       <h2>Markt <small>geht er hoch oder runter?</small></h2>${trendHtml(trend, true)}
       <h2>Heute <small>${running ? running + ' Spiele laufen' : 'kein Spiel läuft'}</small></h2>
       ${live.mine.length ? live.mine.slice(0, 3).map((r) => `<div class="card" data-open="${r.id}"><div class="row"><div class="grow"><div class="pname"><span>${esc(r.team)}</span>${esc(r.name)}</div></div><div class="price"><b>${r.pts > 0 ? '+' : ''}${r.pts}</b><span class="pill flat">morgen ca. ${fmt(r.tomorrow)}</span></div></div></div>`).join('') : '<div class="empty">Heute noch keine Punkte für dein Team.</div>'}
@@ -310,9 +315,9 @@ const views = {
       const L = S.line;
       const placed = t.players.filter((p) => p.lineup > 0).length;
       const bench = t.players.filter((p) => p.lineup === 0);
-      return `${head}<div class="balbar"><span>Aufstellung</span><b>${placed}/16</b><span>Bank ${bench.length}</span></div>
-        <div class="ice">${RINK}<div class="lrow">${slot('F', L, 0)}</div><div class="lrow">${slot('F', L, 1)}${slot('F', L, 2)}</div><div class="lrow">${slot('D', L, 0)}${slot('D', L, 1)}</div><div class="lrow g">${slot('G', 9, 0)}</div></div>
+      return `${head}<div class="balbar"><span>Aufstellung<b>${placed}/16</b></span><span>Bank<b>${bench.length}</b></span></div>
         <div class="floatseg">${seg('line', String(L), [['1', '1. Linie'], ['2', '2. Linie'], ['3', '3. Linie']])}</div>
+        <div class="ice">${RINK}<div class="lrow">${slot('F', L, 0)}</div><div class="lrow">${slot('F', L, 1)}${slot('F', L, 2)}</div><div class="lrow">${slot('D', L, 0)}${slot('D', L, 1)}</div><div class="lrow g">${slot('G', 9, 0)}</div></div>
         ${bench.length ? `<div class="grp">Bank</div>${bench.map((p) => prow(p)).join('')}` : ''}
         <div class="note">Nur Spieler in der Aufstellung bringen Punkte. Tippe auf ein Feld, um einen Spieler einzusetzen oder auf die Bank zu setzen. Spieler, deren Team heute spielt, sind gesperrt.</div>`;
     }
@@ -320,7 +325,7 @@ const views = {
     {
       const groups = [['G', 'Torhüter'], ['D', 'Verteidiger'], ['F', 'Stürmer']];
       const g = t.value - t.invested;
-      return `${head}${bal}<div class="tiles"><div class="tile"><b>${fmt(t.value / 1000)}k</b><span>Teamwert</span></div><div class="tile"><b class="${g >= 0 ? 'up' : 'down'}">${g >= 0 ? '+' : '−'}${fmt(Math.abs(g) / 1000)}k</b><span>Gewinn</span></div><div class="tile"><b>${fmt(t.points)}</b><span>Punkte</span></div></div>
+      return `${head}${bal}<div class="tiles"><div class="tile"><b>${money(t.value)}</b><span>Teamwert</span></div><div class="tile"><b class="${g > 0 ? 'up' : g < 0 ? 'down' : ''}">${g > 0 ? '+' : g < 0 ? '−' : ''}${money(Math.abs(g))}</b><span>Gewinn</span></div><div class="tile"><b>${fmt(t.points)}</b><span>Punkte</span></div></div>
         ${t.players.length ? groups.map(([k, l]) => { const ps = t.players.filter((p) => p.pos === k); return ps.length ? `<div class="grp">${l}</div>${ps.map((p) => prow(p)).join('')}` : ''; }).join('') : '<div class="empty">Noch keine Spieler. Kaufe welche im Transfermarkt.</div>'}`;
     }
   },
@@ -335,7 +340,7 @@ const views = {
     const trendBar = trendHtml(trend, false);
     let list;
     if (S.mode === 'mine') {
-      return `${head}${bal}${trendBar}${auctionsHtml(au)}<div class="floatseg">${seg('mode', S.mode, MODES)}</div>`;
+      return `${head}<div class="floatseg">${seg('mode', S.mode, MODES)}</div>${bal}${trendBar}${auctionsHtml(au)}`;
     }
     if (S.mode === 'sell') {
       list = t.players.filter((p) => !S.pos || p.pos === S.pos);
@@ -345,12 +350,11 @@ const views = {
       const market = await api(`/api/players?${qs}`);
       list = market.length ? market.map((p) => prow(p, { timer: true, owned: true, rightLabel: 'Mindestgebot', btn: p.owned || p.listedBy === S.me?.name ? '' : `<button class="plus" data-bid="${p.id}" ${p.locked ? 'disabled' : ''} aria-label="Bieten">+</button>` })).join('') : '<div class="empty">Keine Spieler gefunden. Falls der Markt ganz leer bleibt, wurden die NHL-Kader noch nicht geladen (siehe README: npm run sync).</div>';
     }
-    return `${head}${bal}${trendBar}
+    return `${head}<div class="floatseg">${seg('mode', S.mode, MODES)}</div>${bal}${trendBar}
       <div class="row2"><input class="field" id="q" type="search" placeholder="Spieler oder Team suchen" value="${esc(S.q)}" autocomplete="off">
       <select class="field" id="sort" aria-label="Sortierung">${[['expiry', 'Läuft ab'], ['price', 'Preis'], ['change', 'Änderung'], ['points', 'Punkte'], ['live', 'Live']].map(([v, l]) => `<option value="${v}" ${S.sort === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
       <div class="tabs">${f.map(([v, l]) => `<button data-pos="${v}" aria-pressed="${S.pos === v}">${l}</button>`).join('')}</div>
-      <div style="margin-top:12px">${list}</div>
-      <div class="floatseg">${seg('mode', S.mode, MODES)}</div>`;
+      <div style="margin-top:12px">${list}</div>`;
   },
 
   async league() {
@@ -361,7 +365,7 @@ const views = {
     }
     const rows = await api('/api/league');
     return `${head}<div class="rhead"><span>Teamwert</span><span>Punkte</span></div>
-      ${rows.map((r, i) => `<div class="rank${r.me ? ' me' : ''}" data-manager="${r.id}" role="button" tabindex="0"><div class="n">${i + 1}.</div><div class="grow"><div class="rname">${esc(r.name)}</div></div><div class="rv">${fmt(r.value)}</div><div class="rp">${fmt(r.points)}${r.live ? `<small>+${r.live} heute</small>` : ''}</div></div>`).join('')}`;
+      ${rows.map((r, i) => `<div class="rank${r.me ? ' me' : ''}${medal(i)}" data-manager="${r.id}" role="button" tabindex="0"><div class="n">${i + 1}.</div><div class="grow"><div class="rname">${esc(r.name)}</div></div><div class="rv">${fmt(r.value)}</div><div class="rp">${fmt(r.points)}${r.live ? `<small>+${r.live} heute</small>` : ''}</div></div>`).join('')}`;
   },
 
   async live() {
@@ -372,7 +376,7 @@ const views = {
     if (S.sub.live === 'league') {
       const board = [...lg].sort((x, y) => y.live - x.live || y.points - x.points);
       return `${head}${top}<div class="rhead"><span>Gesamt</span><span>Heute</span></div>
-        ${board.map((r, i) => `<div class="rank${r.me ? ' me' : ''}" data-manager="${r.id}" role="button" tabindex="0"><div class="n">${i + 1}.</div><div class="grow"><div class="rname">${esc(r.name)}${r.me ? ' (du)' : ''}</div></div><div class="rv">${fmt(r.points - r.live)}</div><div class="rp ${r.live > 0 ? 'up' : ''}">${r.live > 0 ? '+' : ''}${r.live}</div></div>`).join('')}
+        ${board.map((r, i) => `<div class="rank${r.me ? ' me' : ''}${medal(i)}" data-manager="${r.id}" role="button" tabindex="0"><div class="n">${i + 1}.</div><div class="grow"><div class="rname">${esc(r.name)}${r.me ? ' (du)' : ''}</div></div><div class="rv">${fmt(r.points - r.live)}</div><div class="rp ${r.live > 0 ? 'up' : ''}">${r.live > 0 ? '+' : ''}${r.live}</div></div>`).join('')}
         <div class="note">So viele Punkte machen alle Manager heute mit ihrer Aufstellung. Die Zahlen laufen live mit den Spielen.</div>`;
     }
     const pts = new Map(d.mine.map((r) => [r.id, r]));
@@ -381,8 +385,8 @@ const views = {
     const shown = S.liveSeg === 'bench' ? bench : inL;
     const row = (p) => { const r = pts.get(p.id); return prow(p, { sub: p.dressed ? `<b>${r ? r.goals : 0}</b><small>Tore</small><b>${r ? r.assists : 0}</b><small>Assists</small>` : '<small>noch kein Einsatz</small>', right: `<b class="${r && r.pts > 0 ? 'up' : ''}">${r ? (r.pts > 0 ? '+' : '') + r.pts : 0}</b><small>Live</small>` }); };
     return `${head}${top}
-      ${shown.length ? shown.map(row).join('') : `<div class="empty">${S.liveSeg === 'bench' ? 'Alle deine Spieler stehen in der Aufstellung.' : 'Noch niemand in der Aufstellung. Stelle dein Team im Tab Team zusammen.'}</div>`}
       <div class="floatseg">${seg('lsub', S.liveSeg, [['lineup', 'Aufstellung (' + inL.length + ')'], ['bench', 'Ersatz (' + bench.length + ')']])}</div>
+      ${shown.length ? shown.map(row).join('') : `<div class="empty">${S.liveSeg === 'bench' ? 'Alle deine Spieler stehen in der Aufstellung.' : 'Noch niemand in der Aufstellung. Stelle dein Team im Tab Team zusammen.'}</div>`}
       <div class="note">Die Punkte laufen live. Der Preis ändert sich einmal am nächsten Morgen, wenn alle Spiele des Tages fertig sind.</div>`;
   },
 
@@ -422,10 +426,13 @@ const SUBHEAD = {
   live: () => subtabs('live', [['team', 'Team'], ['league', 'Liga']]),
   nhl: () => subtabs('nhl', [['games', 'Spiele'], ['top', 'Topscorer']]),
 };
-function paint(html) {
+let lastScreen = '';
+function paint(html, screen) {
   const keep = document.activeElement?.id === 'q';
   const y = window.scrollY;
-  $app.innerHTML = header() + `<main>${installTip()}${html}</main>`;
+  const fresh = screen !== lastScreen; // animate in only when a new screen opens, not on refresh
+  lastScreen = screen;
+  $app.innerHTML = header() + `<main${fresh ? '' : ' class="static"'}>${installTip()}${html}</main>`;
   if (keep) { const q = document.getElementById('q'); q?.focus(); q?.setSelectionRange(q.value.length, q.value.length); }
   window.scrollTo(0, y);
   if (S.wantNext) { const el = document.getElementById('nextgame'); if (el) { S.wantNext = false; el.scrollIntoView({ block: 'center' }); } }
@@ -441,13 +448,13 @@ async function render() {
   const key = [S.tab, S.sub[S.tab], S.mode, S.pos, S.sort, S.q, S.line, S.liveSeg, S.top].join('|');
   const cached = htmlCache.get(key);
   // Show the last known screen (or a loading hint) right away, then replace it with fresh data.
-  paint(cached ?? `${SUBHEAD[S.tab]?.() ?? ''}<div class="loading"><i></i><i></i><i></i></div>`);
+  paint(cached ?? `${SUBHEAD[S.tab]?.() ?? ''}<div class="loading" aria-label="Lädt"><i></i><i></i><i></i></div>`, key);
   S.cd = setInterval(tickCountdown, 1000);
   let html;
   try { html = await views[S.tab](); } catch (e) { if (e.message === 'login') return; if (my !== renderId) return; html = `<div class="err" style="margin-top:20px">${esc(e.message)}</div>`; }
   if (my !== renderId) return; // a newer render took over
   htmlCache.set(key, html);
-  if (html !== cached) paint(html);
+  if (html !== cached) paint(html, key);
   if (S.wantNext) { S.wantNext = false; document.getElementById('nextgame')?.scrollIntoView({ block: 'center' }); }
   if (S.tab === 'live' || S.tab === 'board') S.timer = setTimeout(render, 30_000);
 }
@@ -455,7 +462,7 @@ async function render() {
 const STAR = '<svg viewBox="0 0 24 24" class="star" aria-hidden="true"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.6 7-6.2-3.7-6.2 3.7 1.6-7L2 9.2l7.1-.6z"/></svg>';
 const EMBLEM = '<img src="/nhl-logo.png" alt="NHL" class="shield">';
 function header() {
-  return `<header class="top"><div class="top-in"><div class="chip">Saison 26/27</div><div class="logo" aria-label="NHL Topscorer">${EMBLEM}</div>
+  return `<header class="top"><div class="top-in"><div class="chip">Saison ${seasonLabel}</div><div class="logo" aria-label="NHL Topscorer">${EMBLEM}</div>
     <button class="gear" data-settings aria-label="Einstellungen"><svg viewBox="0 0 24 24"><path d="M19.4 13a7.6 7.6 0 000-2l2-1.6-2-3.4-2.4 1a7.5 7.5 0 00-1.7-1L15 3.4h-4l-.4 2.6a7.5 7.5 0 00-1.7 1l-2.4-1-2 3.4 2 1.6a7.6 7.6 0 000 2l-2 1.6 2 3.4 2.4-1a7.5 7.5 0 001.7 1l.4 2.6h4l.4-2.6a7.5 7.5 0 001.7-1l2.4 1 2-3.4zM13 15.5a3.5 3.5 0 110-7 3.5 3.5 0 010 7z" transform="translate(-1 0)"/></svg></button></div></header>`;
 }
 
@@ -474,11 +481,11 @@ async function managerSheet(id) {
     return p ? `<button class="slot" data-open="${p.id}" aria-label="${esc(p.first + ' ' + p.last)}">${avatar(p)}<span class="sn">${esc(p.last)}</span>${p.injury ? '<i class="sx">!</i>' : ''}</button>`
       : `<div class="slot empty"><span class="plusc"></span><span class="sn">${posName}</span></div>`;
   };
-  const body = () => `<div class="ice">${RINK}<div class="lrow">${slot('F', line, 0)}</div><div class="lrow">${slot('F', line, 1)}${slot('F', line, 2)}</div><div class="lrow">${slot('D', line, 0)}${slot('D', line, 1)}</div><div class="lrow g">${slot('G', 9, 0)}</div></div>
-    <div class="seg mseg">${[1, 2, 3].map((n) => `<button data-mline="${n}" aria-selected="${n === line}">${n}. Linie</button>`).join('')}</div>
+  const body = () => `<div class="seg mseg">${[1, 2, 3].map((n) => `<button data-mline="${n}" aria-selected="${n === line}">${n}. Linie</button>`).join('')}</div>
+    <div class="ice">${RINK}<div class="lrow">${slot('F', line, 0)}</div><div class="lrow">${slot('F', line, 1)}${slot('F', line, 2)}</div><div class="lrow">${slot('D', line, 0)}${slot('D', line, 1)}</div><div class="lrow g">${slot('G', 9, 0)}</div></div>
     ${bench.length ? `<div class="grp">Bank</div>${bench.map((p) => prow(p)).join('')}` : ''}`;
   const bg = openSheet(`<div class="shead"><div class="sname">${esc(m.name)}</div><div class="ptag">${placed}/16 in der Aufstellung · ${m.count} Spieler</div></div>
-    <div class="big3 small"><div><b>${fmt(m.points)}</b><span>Punkte</span></div><div><b class="${m.live > 0 ? 'up' : ''}">${m.live > 0 ? '+' : ''}${m.live}</b><span>Heute</span></div><div><b>${fmt(m.value / 1000)}k</b><span>Teamwert</span></div></div>
+    <div class="big3 small"><div><b>${fmt(m.points)}</b><span>Punkte</span></div><div><b class="${m.live > 0 ? 'up' : ''}">${m.live > 0 ? '+' : ''}${m.live}</b><span>Heute</span></div><div><b>${money(m.value)}</b><span>Teamwert</span></div></div>
     <div id="mbody">${body()}</div>`);
   bg.querySelector('.sheet').classList.add('center');
   bg.addEventListener('click', (e) => {
@@ -565,7 +572,7 @@ async function gameSheet(id) {
 
 /* ---------- bids, offers ---------- */
 async function act(path, body, okMsg, bg) {
-  try { await api(path, { body }); toast(okMsg); bg?.remove(); await refreshMe(); render(); } catch (err) { toast(err.message); }
+  try { await api(path, { body }); toast(okMsg); closeSheet(bg); await refreshMe(); render(); } catch (err) { toast(err.message); }
 }
 
 async function bidSheet(id) {
@@ -610,7 +617,7 @@ function auctionsHtml(au) {
 
 /* ---------- lineup sheets ---------- */
 async function moveTo(playerId, line, bg) {
-  try { await api('/api/lineup', { body: { playerId, line } }); bg.remove(); render(); } catch (err) { toast(err.message); }
+  try { await api('/api/lineup', { body: { playerId, line } }); closeSheet(bg); render(); } catch (err) { toast(err.message); }
 }
 function slotSheet(id) {
   const p = S.team?.players.find((x) => x.id === id);
@@ -620,7 +627,7 @@ function slotSheet(id) {
     <button class="btn buy wide" data-details style="margin-top:10px">Details</button>`);
   bg.addEventListener('click', (e) => {
     if (e.target.closest('[data-bench]')) moveTo(id, 0, bg);
-    if (e.target.closest('[data-details]')) { bg.remove(); openPlayer(id); }
+    if (e.target.closest('[data-details]')) { closeSheet(bg); openPlayer(id); }
   });
 }
 function addSheet(pos, line) {
@@ -630,7 +637,7 @@ function addSheet(pos, line) {
   bg.addEventListener('click', (e) => {
     const b = e.target.closest('[data-put]');
     if (b) { e.stopPropagation(); moveTo(Number(b.dataset.put), pos === 'G' ? 9 : line, bg); }
-    else if (e.target.closest('[data-open]')) { bg.remove(); openPlayer(e.target.closest('[data-open]').dataset.open); }
+    else if (e.target.closest('[data-open]')) { closeSheet(bg); openPlayer(e.target.closest('[data-open]').dataset.open); }
   });
 }
 
@@ -638,11 +645,29 @@ function addSheet(pos, line) {
 function openSheet(html) {
   const bg = document.createElement('div');
   bg.className = 'sheet-bg';
-  bg.innerHTML = `<div class="sheet" role="dialog"><button class="close" data-close aria-label="Schliessen">✕</button>${html}</div>`;
-  bg.addEventListener('click', (e) => { if (e.target === bg || e.target.closest('[data-close]')) bg.remove(); });
-  document.body.append(bg);
+  bg.innerHTML = `<div class="sheet" role="dialog" aria-modal="true" tabindex="-1"><button class="close" data-close aria-label="Schliessen">✕</button>${html}</div>`;
+  bg.addEventListener('click', (e) => { if (e.target === bg || e.target.closest('[data-close]')) closeSheet(bg); });
+  mountSheet(bg);
   return bg;
 }
+/** Show a sheet: lock the page behind it and move focus into it. */
+function mountSheet(bg) {
+  document.body.append(bg);
+  document.body.classList.add('locked');
+  bg.querySelector('.sheet')?.focus({ preventScroll: true });
+}
+/** Slide a sheet out, then remove it. Safe to call twice. */
+function closeSheet(bg) {
+  if (!bg?.isConnected || bg.classList.contains('closing')) return;
+  bg.classList.add('closing');
+  const done = () => { bg.remove(); if (!document.querySelector('.sheet-bg:not(.closing)')) document.body.classList.remove('locked'); };
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) done(); else setTimeout(done, 200);
+}
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  const open = [...document.querySelectorAll('.sheet-bg:not(.closing)')].pop();
+  if (open) closeSheet(open);
+});
 
 function openSettings() {
   const bg = openSheet(`<div class="shead"><div class="sname">${esc(S.me?.name || '')}</div><div class="ptag">Konto ${fmt(S.me?.balance || 0)}</div></div>
@@ -650,8 +675,8 @@ function openSettings() {
     <button class="btn buy wide" data-invite style="margin-top:10px">Freunde einladen</button>
     <button class="btn sell wide" data-logout style="margin-top:10px">Abmelden</button>`);
   bg.addEventListener('click', async (e) => {
-    if (e.target.closest('[data-rules]')) { bg.remove(); openRules(); }
-    if (e.target.closest('[data-logout]')) { bg.remove(); await api('/api/logout', { body: {} }).catch(() => {}); S.me = null; showAuth(); }
+    if (e.target.closest('[data-rules]')) { closeSheet(bg); openRules(); }
+    if (e.target.closest('[data-logout]')) { closeSheet(bg); await api('/api/logout', { body: {} }).catch(() => {}); S.me = null; showAuth(); }
   });
 }
 
@@ -685,7 +710,8 @@ function showAuth(mode = 'login', error = '') {
   clearInterval(S.cd);
   $nav.hidden = true;
   const reg = mode === 'register';
-  $app.innerHTML = `<form class="auth" id="auth" autocomplete="on"><div class="brand">NHL<br>Topscorer</div>
+  $app.innerHTML = `<form class="auth" id="auth" autocomplete="on"><div class="hello"><img src="/nhl-logo.png" alt="NHL"><div class="brand">NHL <span>Topscorer</span></div>
+    <p>${reg ? 'Gründe dein Team mit echten NHL-Spielern und spiel gegen deine Freunde.' : 'Echte Spiele, echte Punkte, echte Preise. Melde dich an.'}</p></div>
     ${error ? `<div class="err">${esc(error)}</div>` : ''}
     <label>Name<input class="field" name="name" autocomplete="username" required minlength="2" maxlength="20"></label>
     <label>Passwort<input class="field" name="password" type="password" autocomplete="${reg ? 'new-password' : 'current-password'}" required minlength="8"></label>

@@ -3,7 +3,7 @@
  "short_name": "Topscorer",
  "start_url": "/",
  "display": "standalone",
- "background_color": "#16223a",
+ "background_color": "#0b1428",
  "theme_color": "#2f6bd6",
  "icons": [
   {
