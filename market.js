@@ -5,11 +5,12 @@ import { resolveMarket, expireUserListings, isLocked, dropBids } from './auction
 const HOUR = 3_600_000;
 
 /** Pick a random player who is healthy and not on the market yet. Pricier players are a bit more likely. */
-function pickPlayer() {
+function pickPlayer(exclude = -1) {
   const rows = db.prepare(`SELECT id, price FROM players
     WHERE id NOT IN (SELECT player_id FROM market_listings)
       AND id NOT IN (SELECT player_id FROM roster)
-      AND (injury_status IS NULL OR injury_status != 'out')`).all();
+      AND id != ?
+      AND (injury_status IS NULL OR injury_status != 'out')`).all(exclude);
   if (!rows.length) return null;
   const weights = rows.map((r) => Math.sqrt(r.price));
   let x = Math.random() * weights.reduce((a, b) => a + b, 0);
@@ -51,7 +52,7 @@ export function refreshMarket(now = new Date()) {
       // The replacement keeps the hourly rhythm: it leaves 48 hours after the offer it replaces.
       let next = new Date(e.expires_at).getTime() + RULES.marketHours * HOUR;
       while (next <= now.getTime()) next += RULES.marketHours * HOUR; // server was off for a long time
-      const id = pickPlayer();
+      const id = pickPlayer(e.player_id); // not the player who just left
       if (id != null) insert(id, new Date(next));
     }
     // A player who now belongs to a manager (or is injured, see below) cannot be on the market.

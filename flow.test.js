@@ -155,7 +155,8 @@ test('market: 48 offers, one leaves and one arrives every hour, each player stay
   assert.ok(!rows().some((r) => r.player_id === first), 'expired player must leave the market');
   assert.equal(new Date(rows()[47].expires_at) - t0, 49 * HOUR); // the newcomer stays exactly 48 hours from its slot
 
-  // Nobody can buy a player who is not on the market.
+  // Nobody can buy a player who is not on the market (refresh first: buy() refreshes the market at the real time).
+  market.refreshMarket();
   const off = db.prepare('SELECT id FROM players WHERE id NOT IN (SELECT player_id FROM market_listings) LIMIT 1').get().id;
   const uid = game.register('Marktkunde', 'passwort123', 'testcode', 'testcode');
   assert.throws(() => game.buy(uid, off), /nicht auf dem Markt/);

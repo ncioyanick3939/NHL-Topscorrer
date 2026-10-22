@@ -299,7 +299,9 @@ export function managerTeam(targetId) {
   const owned = ownedSet(targetId);
   const lineup = new Map(db.prepare('SELECT player_id, lineup FROM roster WHERE user_id = ?').all(targetId).map((r) => [r.player_id, r.lineup]));
   const players = rows.map((p) => ({ ...shape(p, owned), lineup: lineup.get(p.id) ?? 0 }));
+  // same rule as the league table: only games that started after the manager joined count
   const live = db.prepare(`SELECT COALESCE(SUM(ds.pts), 0) AS s FROM roster r JOIN day_stats ds ON ds.player_id = r.player_id
+    JOIN users u ON u.id = r.user_id JOIN games gm ON gm.id = ds.game_id AND datetime(u.created_at) <= datetime(gm.start_utc)
     WHERE r.user_id = ? AND r.lineup > 0 AND ds.day NOT IN (SELECT day FROM days)`).get(targetId).s;
   return { id: u.id, name: u.name, points: u.points + live, live, value: players.reduce((s, p) => s + p.price, 0), count: players.length, players };
 }
