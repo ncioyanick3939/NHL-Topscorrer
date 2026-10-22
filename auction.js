@@ -57,7 +57,8 @@ function transfer(buyerId, playerId, price, sellerId) {
 export function resolveMarket(playerId) {
   const p = db.prepare('SELECT pos FROM players WHERE id = ?').get(playerId);
   const bids = db.prepare('SELECT user_id, amount FROM bids WHERE player_id = ? ORDER BY amount DESC, at ASC').all(playerId);
-  const winner = p && bids.find((b) => !cannotReceive(b.user_id, p.pos, b.amount) && !db.prepare('SELECT 1 FROM roster WHERE user_id = ? AND player_id = ?').get(b.user_id, playerId));
+  const taken = !!db.prepare('SELECT 1 FROM roster WHERE player_id = ?').get(playerId); // he now belongs to somebody else
+  const winner = p && !taken && bids.find((b) => !cannotReceive(b.user_id, p.pos, b.amount) && !db.prepare('SELECT 1 FROM roster WHERE user_id = ? AND player_id = ?').get(b.user_id, playerId));
   if (winner) transfer(winner.user_id, playerId, winner.amount, null);
   closeBids(playerId, winner?.user_id ?? null);
   return winner ?? null;

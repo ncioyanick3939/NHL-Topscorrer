@@ -103,6 +103,9 @@ test('HTTP: login required, register with invite code, cookie session', async ()
   const me = await (await fetch(`${base}/api/me`, { headers: { cookie } })).json();
   assert.equal(me.name, 'Anna');
   assert.equal(me.balance, 2_000_000);
+  const { db: tdb } = await import('./db.js');
+  const hid = tdb.prepare("SELECT id FROM players WHERE last = 'Hischier'").get().id;
+  tdb.prepare('INSERT OR REPLACE INTO market_listings (player_id, listed_at, expires_at) VALUES (?,?,?)').run(hid, new Date().toISOString(), new Date(Date.now() + 3_600_000).toISOString());
   const list = await (await fetch(`${base}/api/players`, { headers: { cookie } })).json();
   assert.ok(list.some((p) => p.last === 'Hischier'));
   assert.equal((await post('/api/login', { name: 'Anna', password: 'falsch-falsch' })).status, 401);
@@ -355,4 +358,21 @@ test('official NHL lineup: rosterSpots are read and shown as "in" / "out" before
   assert.equal(find(660001).nhlLineup, 'in');
   assert.equal(find(660002).nhlLineup, 'out');
   db.prepare("DELETE FROM games WHERE id = 660100").run();
+});
+
+test('every player belongs to one manager only', async () => {
+  const { db } = await import('./db.js');
+  const game = await import('./game.js');
+  const { refreshMarket } = await import('./market.js');
+  const mk = (n) => { db.prepare("INSERT OR IGNORE INTO users (name, salt, pw_hash, balance) VALUES (?,'s','x',5000000)").run(n); return db.prepare('SELECT id FROM users WHERE name=?').get(n).id; };
+  const [a, b] = [mk('one_a'), mk('one_b')];
+  db.prepare("INSERT OR IGNORE INTO players (id, team, first, last, pos, price, prev_price) VALUES (550001,'ZZW','Solo','Player','F',100000,100000)").run();
+  db.prepare('INSERT INTO roster (user_id, player_id, bought_for) VALUES (?,550001,100000)').run(a);
+  assert.throws(() => db.prepare('INSERT INTO roster (user_id, player_id, bought_for) VALUES (?,550001,100000)').run(b), /UNIQUE/);
+  // an owned player cannot be on the market or be bought
+  db.prepare('INSERT OR REPLACE INTO market_listings (player_id, listed_at, expires_at) VALUES (550001, ?, ?)').run(new Date().toISOString(), new Date(Date.now() + 3_600_000).toISOString());
+  refreshMarket();
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM market_listings WHERE player_id = 550001').get().n, 0);
+  assert.throws(() => game.placeBid(b, 550001, 900000), /nicht auf dem Markt|einem anderen/);
+  assert.equal(game.topscorers(b, {}).find((p) => p.id === 550001)?.ownerName ?? 'one_a', 'one_a');
 });

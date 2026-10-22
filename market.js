@@ -8,6 +8,7 @@ const HOUR = 3_600_000;
 function pickPlayer() {
   const rows = db.prepare(`SELECT id, price FROM players
     WHERE id NOT IN (SELECT player_id FROM market_listings)
+      AND id NOT IN (SELECT player_id FROM roster)
       AND (injury_status IS NULL OR injury_status != 'out')`).all();
   if (!rows.length) return null;
   const weights = rows.map((r) => Math.sqrt(r.price));
@@ -52,6 +53,13 @@ export function refreshMarket(now = new Date()) {
       while (next <= now.getTime()) next += RULES.marketHours * HOUR; // server was off for a long time
       const id = pickPlayer();
       if (id != null) insert(id, new Date(next));
+    }
+    // A player who now belongs to a manager (or is injured, see below) cannot be on the market.
+    for (const o of db.prepare('SELECT l.player_id, l.expires_at FROM market_listings l WHERE l.player_id IN (SELECT player_id FROM roster)').all()) {
+      db.prepare('DELETE FROM market_listings WHERE player_id = ?').run(o.player_id);
+      dropBids(o.player_id);
+      const id = pickPlayer();
+      if (id != null) insert(id, new Date(o.expires_at));
     }
     // Players who became injured ("out") leave the market right away and are replaced.
     const out = db.prepare(`SELECT l.player_id, l.expires_at FROM market_listings l JOIN players p ON p.id = l.player_id

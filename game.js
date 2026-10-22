@@ -74,7 +74,7 @@ export function ensureStarterTeam(userId) {
   if (!u || u.starter_given) return false;
   const need = RULES.starter;
   const poolFor = (pos, cap) => db.prepare(`SELECT id, price FROM players WHERE pos = ? AND price <= ?
-      AND (injury_status IS NULL OR injury_status != 'out')`).all(pos, cap);
+      AND id NOT IN (SELECT player_id FROM roster) AND (injury_status IS NULL OR injury_status != 'out')`).all(pos, cap);
   const shuffle = (a) => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
 
   for (const cap of [need.maxPlayerPrice, need.maxPlayerPrice * 2, 10 ** 9]) {
@@ -125,6 +125,7 @@ function shape(p, owned) {
     hoursLeft: p.listing_expires ? Math.max(0, Math.ceil((new Date(p.listing_expires) - Date.now()) / 3_600_000)) : null,
     onMarket: !!p.listing_expires && new Date(p.listing_expires) > new Date(),
     dressed: !!p.dressed, nhlLineup: p.nhl_lineup_out ? (p.in_nhl_lineup ? 'in' : 'out') : null, nextGame: nextGame(p.next_game),
+    ownerName: p.owner_name ?? null,
     listedBy: p.listed_by ?? null, minBid: p.listed_by ? PRICE.minPrice : p.price_floor ?? p.price,
   };
 }
@@ -149,6 +150,7 @@ const SELECT_PLAYER = `SELECT p.*, ${LOCKED_SQL} AS locked, ${todayPtsSql} AS to
   (SELECT g.start_utc || '|' || g.state FROM games g WHERE (g.home = p.team OR g.away = p.team) AND g.day NOT IN (SELECT day FROM days)
      AND g.state NOT IN ('FINAL','OFF') ORDER BY g.start_utc LIMIT 1) AS next_game,
   EXISTS (SELECT 1 FROM day_stats d WHERE d.player_id = p.id AND d.day NOT IN (SELECT day FROM days)) AS dressed,
+  (SELECT u.name FROM roster r JOIN users u ON u.id = r.user_id WHERE r.player_id = p.id) AS owner_name,
   (SELECT u.name FROM user_listings l JOIN users u ON u.id = l.seller_id WHERE l.player_id = p.id) AS listed_by,
   (SELECT l.seller_id FROM user_listings l WHERE l.player_id = p.id) AS listed_by_id FROM players p`;
 
@@ -213,6 +215,7 @@ export function buy(userId, playerId) {
     if (p.locked) throw new HttpError(409, 'Gesperrt: Das Team spielt heute oder der Tag ist noch nicht abgeschlossen.');
     const u = db.prepare('SELECT balance FROM users WHERE id = ?').get(userId);
     if (db.prepare('SELECT 1 FROM roster WHERE user_id = ? AND player_id = ?').get(userId, playerId)) throw new HttpError(409, 'Dieser Spieler gehört dir schon.');
+    if (db.prepare('SELECT 1 FROM roster WHERE player_id = ?').get(playerId)) throw new HttpError(409, 'Dieser Spieler gehört schon einem anderen Manager.');
     if (u.balance < p.price) throw new HttpError(409, 'Zu wenig Guthaben.');
     const count = db.prepare('SELECT COUNT(*) AS n FROM roster WHERE user_id = ?').get(userId).n;
     if (count >= RULES.maxRoster) throw new HttpError(409, `Maximal ${RULES.maxRoster} Spieler im Kader.`);
@@ -328,6 +331,7 @@ export function placeBid(userId, playerId, amount) {
     const p = db.prepare(`${SELECT_PLAYER} WHERE p.id = ?`).get(playerId);
     if (!p) throw new HttpError(404, 'Spieler nicht gefunden.');
     const on = onMarketNow(playerId);
+    if (on?.kind === 'market' && p.owner_name) throw new HttpError(409, 'Dieser Spieler gehört schon einem anderen Manager.');
     if (!on) throw new HttpError(409, 'Dieser Spieler ist nicht auf dem Markt.');
     if (on.sellerId === userId) throw new HttpError(409, 'Das ist dein eigener Spieler.');
     if (db.prepare('SELECT 1 FROM roster WHERE user_id = ? AND player_id = ?').get(userId, playerId)) throw new HttpError(409, 'Dieser Spieler gehört dir schon.');
