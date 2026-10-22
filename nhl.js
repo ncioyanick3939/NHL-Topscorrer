@@ -1,15 +1,28 @@
+import dns from 'node:dns';
 import { db, tx, getMeta, setMeta } from './db.js';
 import { NHL_API, NHL_TEAMS, PRICE, RULES } from './config.js';
 import { statsToPoints, nextPrice, summarize } from './scoring.js';
 import { rolloverReached } from './util.js';
 
+// Some hosts (e.g. Codespaces) hang on IPv6; try IPv4 first.
+dns.setDefaultResultOrder('ipv4first');
+
 /* ---------- HTTP ---------- */
 
+// The NHL site may ignore requests with an unknown User-Agent, so we send a normal browser one.
+const HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
+  Accept: 'application/json',
+};
+
 export async function fetchJson(path) {
-  const res = await fetch(`${NHL_API}${path}`, {
-    headers: { 'User-Agent': 'nhl-topscorer-private/0.1' },
-    signal: AbortSignal.timeout(15_000),
-  });
+  let res;
+  try {
+    res = await fetch(`${NHL_API}${path}`, { headers: HEADERS, redirect: 'follow', signal: AbortSignal.timeout(30_000) });
+  } catch (e) {
+    const why = e.cause?.code || e.cause?.message || e.message;
+    throw new Error(`NHL API ${path}: ${why}`);
+  }
   if (!res.ok) throw new Error(`NHL API ${path}: HTTP ${res.status}`);
   return res.json();
 }
