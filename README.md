@@ -20,6 +20,27 @@ Beim ersten Start lädt der Server automatisch alle 32 NHL-Kader und den Spielpl
 
 Kader von Hand neu laden: `npm run sync`. Verletzungen von Hand laden: `npm run injuries`. Einen Durchlauf von Hand starten: `npm run process`. Tests: `npm test`.
 
+## Öffentlich ins Internet stellen (läuft immer)
+
+Ein Codespace schaltet sich nach etwa 30 Minuten ohne Aktivität ab. Für eine Webseite, die immer läuft, braucht es ein Hosting. Am einfachsten ist **Railway** (ca. 5 USD pro Monat, Abrechnung nach Verbrauch):
+
+1. Auf https://railway.com mit dem GitHub-Konto anmelden.
+2. **New Project → Deploy from GitHub repo** und dieses Repository wählen. Railway findet das `Dockerfile` selbst.
+3. Im Dienst rechts klicken → **Attach Volume**, Mount Path: `/data`. Dort liegt die Datenbank, sie bleibt bei jedem Update erhalten.
+4. Unter **Variables** `INVITE_CODE` auf einen eigenen Code setzen (sonst steht ein zufälliger im Log).
+5. Unter **Settings → Networking → Generate Domain** klicken. Das ergibt eine feste Adresse wie `nhl-topscorer.up.railway.app`, die du deinen Freunden schicken kannst.
+
+Danach wird bei jedem Push auf `main` automatisch neu veröffentlicht. Beim ersten Start lädt der Server die NHL-Kader (etwa eine Minute).
+
+Das `Dockerfile` läuft auch auf Fly.io, Render (mit Disk) oder einem eigenen Server. Wichtig ist immer: ein bleibender Speicher unter `/data`. Ohne ihn ist die Datenbank nach jedem Neustart leer.
+
+| Variable | Bedeutung |
+| --- | --- |
+| `DATA_DIR` | Ordner für Datenbank und Einladungscode (im Dockerfile `/data`) |
+| `INVITE_CODE` | fester Einladungscode |
+| `COOKIE_SECURE=1` | Login-Cookie nur über HTTPS (im Dockerfile gesetzt) |
+| `TRUST_PROXY=1` | echte Besucher-IP vom Hosting übernehmen, für die Login-Sperre (im Dockerfile gesetzt) |
+
 ## Spielregeln
 
 | Regel | Wert |

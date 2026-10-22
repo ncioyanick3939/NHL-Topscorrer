@@ -2,7 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 
-const DB_PATH = process.env.DB_PATH || new URL('./data/app.db', import.meta.url).pathname;
+const DB_PATH = process.env.DB_PATH || (process.env.DATA_DIR ? `${process.env.DATA_DIR}/app.db` : new URL('./data/app.db', import.meta.url).pathname);
 mkdirSync(dirname(DB_PATH), { recursive: true });
 
 export const db = new DatabaseSync(DB_PATH);

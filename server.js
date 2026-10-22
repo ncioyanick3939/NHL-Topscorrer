@@ -12,14 +12,16 @@ import { startScheduler, getGameLog, getGameEvents, lastLogError } from './nhl.j
 const ROOT = new URL('.', import.meta.url).pathname;
 const PORT = Number(process.env.PORT || 3000);
 const SECURE = process.env.COOKIE_SECURE === '1'; // set to 1 when served over HTTPS
+const DATA_DIR = process.env.DATA_DIR || join(ROOT, 'data'); // hosting: point this at the persistent volume
+const TRUST_PROXY = process.env.TRUST_PROXY === '1'; // behind a hosting proxy: the real client IP is in X-Forwarded-For
 
 /* Invite code: env INVITE_CODE, else a random one saved to data/invite-code.txt */
 async function loadInvite() {
   if (process.env.INVITE_CODE) return process.env.INVITE_CODE;
-  const f = join(ROOT, 'data', 'invite-code.txt');
+  const f = join(DATA_DIR, 'invite-code.txt');
   if (existsSync(f)) return readFileSync(f, 'utf8').trim();
   const code = randomBytes(4).toString('hex');
-  await mkdir(join(ROOT, 'data'), { recursive: true });
+  await mkdir(DATA_DIR, { recursive: true });
   await writeFile(f, code + '\n');
   return code;
 }
@@ -70,7 +72,7 @@ const sessionCookie = (token, expires) =>
 async function api(req, res, url) {
   const route = `${req.method} ${url.pathname}`;
   const q = url.searchParams;
-  const ip = req.socket.remoteAddress;
+  const ip = (TRUST_PROXY && String(req.headers['x-forwarded-for'] || '').split(',')[0].trim()) || req.socket.remoteAddress;
 
   if (req.method === 'POST' && !String(req.headers['content-type'] || '').startsWith('application/json')) {
     throw new game.HttpError(415, 'Nur JSON erlaubt.');
@@ -169,6 +171,7 @@ const server = createServer(async (req, res) => {
     "default-src 'self'; img-src 'self' https://assets.nhle.com data:; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; font-src https://fonts.gstatic.com; script-src 'self'");
   try {
     const url = new URL(req.url, 'http://localhost');
+    if (url.pathname === '/healthz') { res.writeHead(200, { 'Content-Type': 'text/plain' }); return res.end('ok'); } // for the hosting health check
     if (url.pathname.startsWith('/api/')) return await api(req, res, url);
     return await serveStatic(req, res, url);
   } catch (e) {
