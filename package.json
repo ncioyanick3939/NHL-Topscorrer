@@ -10,6 +10,7 @@
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning server.js",
     "sync": "node --disable-warning=ExperimentalWarning nhl.js sync",
+    "injuries": "node --disable-warning=ExperimentalWarning nhl.js injuries",
     "process": "node --disable-warning=ExperimentalWarning nhl.js process",
     "test": "node --disable-warning=ExperimentalWarning --test flow.test.js"
   }

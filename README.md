@@ -18,20 +18,29 @@ Beim ersten Start lädt der Server automatisch alle 32 NHL-Kader und den Spielpl
 - Laufende Spiele aktualisieren die Live-Punkte.
 - Am nächsten Tag ab 10:00 Uhr (Zürich), wenn alle Spiele des Tages fertig sind, wird der Tag abgeschlossen: Preise ändern sich, Statistiken und Manager-Punkte werden gebucht.
 
-Kader von Hand neu laden: `npm run sync`. Einen Durchlauf von Hand starten: `npm run process`. Tests: `npm test`.
+Kader von Hand neu laden: `npm run sync`. Verletzungen von Hand laden: `npm run injuries`. Einen Durchlauf von Hand starten: `npm run process`. Tests: `npm test`.
 
 ## Spielregeln
 
 | Regel | Wert |
 | --- | --- |
-| Startbudget | 5'000'000 |
-| Kader | max. 18 Spieler, davon max. 3 Torhüter |
-| Kaufen und Verkaufen | zum aktuellen Preis |
+| Startteam | gratis und zufällig: 9 Stürmer, 6 Verteidiger, 1 Torhüter (Gesamtwert höchstens 3,5 Mio.) |
+| Startbudget | 2'000'000 |
+| Kader | max. 20 Spieler, davon max. 3 Torhüter |
+| Markt | 48 Angebote. Jede Stunde verschwindet eines, und ein neues kommt. Jeder Spieler bleibt 48 Stunden |
+| Kaufen | nur Spieler auf dem Markt, zum aktuellen Preis |
+| Verkaufen | jederzeit, zum aktuellen Preis |
 | Sperre | Spieler, deren Team heute spielt oder gespielt hat, sind bis zum Tagesabschluss gesperrt |
 | Preisänderung | einmal pro Tag, nach den Tagespunkten |
 | Maximale Änderung | ±15 % pro Tag |
 
-Alle Werte stehen in `config.js`.
+Alle Werte stehen in `config.js`. Das Startteam bekommt jeder einmal beim ersten Login, auch Konten, die schon vorher erstellt wurden und noch keinen Kader haben.
+
+## Verletzungen und Abwesenheit
+
+- **Verletzt oder fraglich:** Die NHL-API hat keine Verletzungsdaten. Deshalb liest der Server stündlich eine öffentliche Verletztenliste (ESPN) und ordnet die Spieler über den Namen zu. Das ist eine Schätzung: Bei zwei Spielern mit gleichem Namen wird keiner markiert. Verletzte ("Out") Spieler verschwinden vom Markt und kommen nicht ins Startteam. Beim Kauf eines verletzten oder fraglichen Spielers fragt die App nach.
+- **Letztes Spiel verpasst:** Stand ein Spieler im letzten Spiel seines Teams nicht im Einsatz, zeigt die App das an. Der Grund (verletzt, überzählig, abwesend) ist dann nicht bekannt.
+- Von Hand laden: `npm run injuries`. Klappt der Abruf nicht, funktioniert die App trotzdem, nur ohne Verletzungsinfos.
 
 ## Punkte
 
@@ -48,8 +57,10 @@ Alle Dateien liegen in einem Ordner.
 
 - `server.js`: Web-Server und Schnittstelle
 - `nhl.js`: Abruf der NHL-API, Live-Punkte, Tagesabschluss
+- `market.js`: Markt mit 48-Stunden-Angeboten
+- `injuries.js`: Verletzungsinfos
 - `scoring.js`: Punkte und Preisformel
-- `game.js`: Konten, Kaufen und Verkaufen, Liga
+- `game.js`: Konten, Startteam, Kaufen und Verkaufen, Liga
 - `config.js`: alle Spielregeln und Punktewerte
 - `db.js`, `util.js`: Datenbank und Hilfsfunktionen
 - `index.html`, `style.css`, `app.js`: die App im Browser (nur diese drei werden ausgeliefert)

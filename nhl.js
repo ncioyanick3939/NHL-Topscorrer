@@ -3,6 +3,8 @@ import { db, tx, getMeta, setMeta } from './db.js';
 import { NHL_API, NHL_TEAMS, PRICE, RULES } from './config.js';
 import { statsToPoints, nextPrice, summarize } from './scoring.js';
 import { rolloverReached } from './util.js';
+import { refreshMarket } from './market.js';
+import { syncInjuries, injurySyncDue } from './injuries.js';
 
 // Some hosts (e.g. Codespaces) hang on IPv6; try IPv4 first.
 dns.setDefaultResultOrder('ipv4first');
@@ -290,6 +292,10 @@ export async function tick({ log = console.log } = {}) {
     if (nPlayers === 0 || Date.now() - last > 7 * 24 * 3600 * 1000) await syncRosters({ log });
     await syncSchedule();
     await pollGames({ log });
+    if (injurySyncDue(RULES.injurySyncMs)) {
+      try { await syncInjuries({ log }); } catch (e) { log(`Verletzungen nicht geladen: ${e.cause?.code || e.message}`); setMeta('last_injury_sync', Date.now() - RULES.injurySyncMs + 10 * 60_000); }
+    }
+    refreshMarket();
     const done = finalizeDueDays();
     if (done.length) log(`Tag abgeschlossen, Preise aktualisiert: ${done.join(', ')}`);
   } catch (e) {
@@ -313,6 +319,7 @@ export function startScheduler(log = console.log) {
 if (import.meta.url === `file://${process.argv[1]}`) {
   const cmd = process.argv[2];
   if (cmd === 'sync') { await syncRosters(); console.log(`${await syncSchedule()} Spiele im Spielplan`); }
+  else if (cmd === 'injuries') { await syncInjuries(); }
   else if (cmd === 'process') { await syncSchedule(); await pollGames(); console.log('Abgeschlossen:', finalizeDueDays()); }
-  else console.log('Nutzung: node nhl.js sync | process');
+  else console.log('Nutzung: node nhl.js sync | process | injuries');
 }

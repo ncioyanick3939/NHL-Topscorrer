@@ -12,7 +12,7 @@ const TEAM_COLORS = {
 };
 const POS = { F: 'Stürmer', D: 'Verteidiger', G: 'Torhüter' };
 
-const S = { tab: 'board', me: null, pos: '', sort: 'price', q: '', timer: null };
+const S = { tab: 'board', me: null, pos: '', sort: 'expiry', q: '', timer: null };
 
 /* ---------- helpers ---------- */
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -74,10 +74,23 @@ function bigChart(h) {
 }
 
 /* ---------- player card + detail ---------- */
+const hoursText = (h) => (h == null ? '' : h <= 1 ? '1 Std' : `${h} Std`);
+
+function injuryBadge(p) {
+  if (p.injury) {
+    const out = p.injury.status === 'out';
+    return `<span class="lock" style="background:${out ? 'var(--down-bg)' : 'rgba(246,205,69,.18)'};color:${out ? 'var(--down)' : 'var(--yellow)'}">${out ? 'Verletzt' : 'Fraglich'}${p.injury.text ? ' · ' + esc(p.injury.text) : ''}</span>`;
+  }
+  if (p.missedLast) return '<span class="lock">Letztes Spiel verpasst</span>';
+  return '';
+}
+
 function card(p) {
-  const live = p.todayPts ? `<span class="livepts">${p.todayPts > 0 ? '+' : ''}${p.todayPts} live</span>` : '';
+  const live = p.todayPts ? `<span class="livepts">${p.todayPts > 0 ? '+' : ''}${p.todayPts} live</span>` : (S.tab === 'market' && p.onMarket ? `<span class="pill flat">noch ${hoursText(p.hoursLeft)}</span>` : '');
   let info = p.owned ? '<span class="lock" style="background:var(--yellow);color:var(--navy)">Im Kader</span>' : '';
+  info += ' ' + injuryBadge(p);
   if (p.locked) info += ' <span class="lock">Gesperrt</span>';
+  info = info.trim();
   return `<div class="card" data-open="${p.id}" tabindex="0" role="button" aria-label="${esc(p.first + ' ' + p.last)}">
     <div class="row">${avatar(p)}
       <div class="grow"><div class="pname"><span>${logo(p.team)}${esc(p.team)} · ${POS[p.pos]}</span>${esc(p.first)} ${esc(p.last)}</div></div>
@@ -94,7 +107,14 @@ async function openPlayer(id) {
   const gain = d.boughtFor != null ? d.price - d.boughtFor : null;
   const action = d.owned
     ? `<button class="btn sell wide" data-sell="${d.id}" ${d.locked ? 'disabled' : ''}>Verkaufen für ${fmt(d.price)}</button>`
-    : `<button class="btn buy wide" data-buy="${d.id}" ${d.locked ? 'disabled' : ''}>Kaufen für ${fmt(d.price)}</button>`;
+    : d.onMarket
+      ? `<button class="btn buy wide" data-buy="${d.id}" ${d.locked ? 'disabled' : ''}>Kaufen für ${fmt(d.price)} · noch ${hoursText(d.hoursLeft)} auf dem Markt</button>`
+      : '<button class="btn buy wide" disabled>Nicht auf dem Markt</button>';
+  const injBlock = d.injury
+    ? `<div class="chart" style="border:1px solid ${d.injury.status === 'out' ? 'var(--down)' : 'var(--yellow)'}"><b class="${d.injury.status === 'out' ? 'down' : ''}">${d.injury.status === 'out' ? 'Verletzt' : 'Fraglich'}</b><div style="color:var(--mute);font-size:13px;margin-top:4px">${esc(d.injury.text || '')}${d.injury.returnDate ? ' · Rückkehr ca. ' + esc(d.injury.returnDate) : ''}</div></div>`
+    : d.missedLast
+      ? '<div class="chart"><b>Letztes Spiel verpasst</b><div style="color:var(--mute);font-size:13px;margin-top:4px">Dieser Spieler stand im letzten Spiel seines Teams nicht im Einsatz (verletzt, überzählig oder abwesend). Der Grund ist nicht bekannt.</div></div>'
+      : '';
   const lockInfo = d.locked ? '<p class="note" style="margin:8px 0 0">Gesperrt: Das Team spielt heute oder der Tag ist noch nicht abgeschlossen. Am nächsten Morgen ist der neue Preis da.</p>' : '';
   const live = d.live ? `<div class="chart"><b>Heute live: ${d.live.pts} Punkte</b><div class="meta" style="color:var(--mute);font-size:13px;margin-top:4px">${d.live.goals} Tore, ${d.live.assists} Assists, ${d.live.shots} Schüsse. Voraussichtlicher Preis morgen: <b>${fmt(d.tomorrow)}</b></div></div>` : '';
   bg.innerHTML = `<div class="sheet" role="dialog" aria-label="${esc(d.first + ' ' + d.last)}">
@@ -104,7 +124,7 @@ async function openPlayer(id) {
     <div class="grid4"><div><b>${fmt(d.points)}</b><span>Punkte</span></div><div><b>${d.games}</b><span>Spiele</span></div><div><b>${d.games ? Math.round(d.points / d.games) : 0}</b><span>Ø Punkte</span></div><div><b class="${gain == null ? '' : gain >= 0 ? 'up' : 'down'}">${gain == null ? '–' : (gain >= 0 ? '+' : '−') + fmt(Math.abs(gain))}</b><span>Gewinn</span></div>
       <div><b>${d.goals}</b><span>Tore</span></div><div><b>${d.assists}</b><span>Assists</span></div><div><b>${d.plusMinus > 0 ? '+' : ''}${d.plusMinus}</b><span>+/−</span></div><div><b>${d.shots}</b><span>Schüsse</span></div>
       <div><b>${d.blocked}</b><span>Geblockt</span></div><div><b>${d.pim}</b><span>Strafmin.</span></div><div><b>${d.wins}</b><span>Siege</span></div><div><b>${d.number ?? '–'}</b><span>Nummer</span></div></div>
-    ${live}${bigChart(d.hist)}
+    ${injBlock}${live}${bigChart(d.hist)}
     <h2 style="margin-top:8px">Letzte Spieltage</h2>
     ${d.log.length ? `<ul class="log">${d.log.map((l) => `<li><div>${esc(l.day)}<small>${esc(l.summary || '')}</small></div><div style="text-align:right"><b>${l.pts > 0 ? '+' : ''}${l.pts} Pkt</b><small>${fmt(l.price)}</small></div></li>`).join('')}</ul>` : '<div class="empty">Noch keine abgeschlossenen Spieltage.</div>'}
     ${action}${lockInfo}</div>`;
@@ -115,6 +135,7 @@ async function openPlayer(id) {
     if (e.target === bg || e.target.closest('[data-close]')) return close();
     const b = e.target.closest('[data-buy],[data-sell]');
     if (!b) return;
+    if (b.dataset.buy && d.injury && !confirm(`${d.first} ${d.last} ist ${d.injury.status === 'out' ? 'verletzt' : 'fraglich'}${d.injury.text ? ' (' + d.injury.text + ')' : ''}. Trotzdem kaufen?`)) return;
     try {
       await api(b.dataset.buy ? '/api/buy' : '/api/sell', { body: { playerId: Number(b.dataset.buy || b.dataset.sell) } });
       toast(b.dataset.buy ? 'Gekauft' : 'Verkauft');
@@ -132,12 +153,14 @@ const views = {
     const [team, moves, live] = await Promise.all([api('/api/team'), api('/api/moves'), api('/api/live')]);
     const gain = team.value - team.invested;
     const gc = gain > 0 ? 'up' : gain < 0 ? 'down' : 'flat';
+    const hurt = team.players.filter((p) => p.injury || p.missedLast);
     const running = live.games.filter((g) => g.state === 'LIVE' || g.state === 'CRIT').length;
     return `<section class="hero"><div class="lbl">Teamwert</div><div class="big">${fmt(team.value)}</div>
       <span class="pill ${gc}">${arrow(gc)} ${gain >= 0 ? '+' : '−'}${fmt(Math.abs(gain))} seit Kauf</span></section>
-      <div class="tiles"><div class="tile"><b>${S.me.rank}.</b><span>Rang</span></div><div class="tile"><b>${fmt(team.points + live.myPoints)}</b><span>Punkte</span></div><div class="tile"><b>${team.players.length}/18</b><span>Im Kader</span></div></div>
+      <div class="tiles"><div class="tile"><b>${S.me.rank}.</b><span>Rang</span></div><div class="tile"><b>${fmt(team.points + live.myPoints)}</b><span>Punkte</span></div><div class="tile"><b>${team.players.length}/20</b><span>Im Kader</span></div></div>
       <h2>Heute <small>${running ? running + ' Spiele laufen' : 'kein Spiel läuft'}</small></h2>
       ${live.mine.length ? live.mine.slice(0, 3).map((r) => `<div class="card" data-open="${r.id}"><div class="row"><div class="grow"><div class="pname"><span>${esc(r.team)}</span>${esc(r.name)}</div></div><div class="price"><b>${r.pts > 0 ? '+' : ''}${r.pts}</b><span class="pill flat">morgen ca. ${fmt(r.tomorrow)}</span></div></div></div>`).join('') : '<div class="empty">Heute noch keine Punkte für dein Team.</div>'}
+      ${hurt.length ? `<h2>Achtung im Team <small>${hurt.length} Spieler</small></h2>${hurt.map(card).join('')}` : ''}
       <h2>Letzte Preisbewegungen <small>Spieltag ${esc(moves[0]?.day || '–')}</small></h2>
       ${moves.length ? moves.slice(0, 8).map((m) => { const up = m.price > m.prev_price; return `<div class="card" data-open="${m.id}"><div class="row"><div class="grow"><div class="pname"><span>${esc(m.team)} · ${esc(m.summary)}</span>${esc(m.first)} ${esc(m.last)}</div></div><div class="price"><b>${fmt(m.price)}</b><span class="pill ${up ? 'up' : 'down'}">${up ? '▲' : '▼'} ${Math.abs((m.price - m.prev_price) / m.prev_price * 100).toFixed(1)}%</span></div></div></div>`; }).join('') : '<div class="empty">Noch keine Preisbewegungen. Sie erscheinen nach dem ersten abgeschlossenen Spieltag.</div>'}`;
   },
@@ -146,18 +169,18 @@ const views = {
     const qs = new URLSearchParams({ pos: S.pos, sort: S.sort, q: S.q });
     const list = await api(`/api/players?${qs}`);
     const f = [['', 'Alle'], ['F', 'Stürmer'], ['D', 'Verteidiger'], ['G', 'Torhüter']];
-    return `<h2>Transfermarkt <small>${list.length} Spieler</small></h2>
+    return `<h2>Transfermarkt <small>${list.length} Spieler · jede Stunde wechselt einer</small></h2>
       <div class="row2"><input class="field" id="q" type="search" placeholder="Spieler oder Team suchen" value="${esc(S.q)}" autocomplete="off">
-      <select class="field" id="sort" aria-label="Sortierung">${[['price', 'Preis'], ['change', 'Änderung'], ['points', 'Punkte'], ['live', 'Live']].map(([v, l]) => `<option value="${v}" ${S.sort === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+      <select class="field" id="sort" aria-label="Sortierung">${[['expiry', 'Läuft ab'], ['price', 'Preis'], ['change', 'Änderung'], ['points', 'Punkte'], ['live', 'Live']].map(([v, l]) => `<option value="${v}" ${S.sort === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
       <div class="tabs">${f.map(([v, l]) => `<button data-pos="${v}" aria-pressed="${S.pos === v}">${l}</button>`).join('')}</div>
-      <div style="margin-top:12px">${list.length ? list.map(card).join('') : '<div class="empty">Keine Spieler gefunden. Falls die Liste leer bleibt, wurden die NHL-Kader noch nicht geladen (siehe README: npm run sync).</div>'}</div>`;
+      <div style="margin-top:12px">${list.length ? list.map(card).join('') : '<div class="empty">Keine Spieler gefunden. Falls der Markt ganz leer bleibt, wurden die NHL-Kader noch nicht geladen (siehe README: npm run sync).</div>'}</div>`;
   },
 
   async team() {
     const t = await api('/api/team');
     const g = t.value - t.invested;
     return `<div class="tiles" style="margin-top:18px"><div class="tile"><b>${fmt(t.value / 1000)}k</b><span>Teamwert</span></div><div class="tile"><b class="${g >= 0 ? 'up' : 'down'}">${g >= 0 ? '+' : '−'}${fmt(Math.abs(g) / 1000)}k</b><span>Gewinn</span></div><div class="tile"><b>${fmt(t.balance / 1000)}k</b><span>Konto</span></div></div>
-      <h2>Dein Kader <small>${t.players.length} von 18</small></h2>
+      <h2>Dein Kader <small>${t.players.length} von 20</small></h2>
       ${t.players.length ? t.players.map(card).join('') : '<div class="empty">Noch keine Spieler. Kaufe welche im Markt.</div>'}`;
   },
 

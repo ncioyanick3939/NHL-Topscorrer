@@ -2,6 +2,7 @@ import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { db, tx } from './db.js';
 import { PRICE, RULES } from './config.js';
 import { nextPrice } from './scoring.js';
+import { refreshMarket } from './market.js';
 
 export class HttpError extends Error {
   constructor(status, message) { super(message); this.status = status; }
@@ -21,7 +22,9 @@ export function register(name, password, invite, expectedInvite) {
   try {
     const r = db.prepare('INSERT INTO users (name, salt, pw_hash, balance) VALUES (?,?,?,?)')
       .run(name, salt, hash(password, salt), PRICE.startBudget);
-    return Number(r.lastInsertRowid);
+    const id = Number(r.lastInsertRowid);
+    ensureStarterTeam(id);
+    return id;
   } catch (e) {
     if (String(e.message).includes('UNIQUE')) throw new HttpError(409, 'Dieser Name ist schon vergeben.');
     throw e;
@@ -34,6 +37,7 @@ export function login(name, password) {
   const a = Buffer.from(hash(String(password || ''), salt), 'hex');
   const b = Buffer.from(u?.pw_hash ?? '0'.repeat(128), 'hex');
   if (!u || !timingSafeEqual(a, b)) throw new HttpError(401, 'Name oder Passwort falsch.');
+  ensureStarterTeam(u.id);
   return u.id;
 }
 
@@ -53,6 +57,38 @@ export function userFromToken(token) {
 
 export function destroySession(token) {
   db.prepare('DELETE FROM sessions WHERE token = ?').run(token);
+}
+
+/* ---------- Starter team ---------- */
+
+/**
+ * Every manager gets a free team once: 9 forwards, 6 defensemen, 1 goalie (the players are random,
+ * healthy and cheap, so everybody starts with a similar team value).
+ * If no players are loaded yet, the team is given at the next login.
+ */
+export function ensureStarterTeam(userId) {
+  if (process.env.NO_STARTER === '1') return false;
+  const u = db.prepare('SELECT starter_given FROM users WHERE id = ?').get(userId);
+  if (!u || u.starter_given) return false;
+  const need = RULES.starter;
+  const poolFor = (pos, cap) => db.prepare(`SELECT id, price FROM players WHERE pos = ? AND price <= ?
+      AND (injury_status IS NULL OR injury_status != 'out')`).all(pos, cap);
+  const shuffle = (a) => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+
+  for (const cap of [need.maxPlayerPrice, need.maxPlayerPrice * 2, 10 ** 9]) {
+    const pools = { F: shuffle(poolFor('F', cap)), D: shuffle(poolFor('D', cap)), G: shuffle(poolFor('G', cap)) };
+    if (pools.F.length < need.F || pools.D.length < need.D || pools.G.length < need.G) continue;
+    const pick = [...pools.F.slice(0, need.F), ...pools.D.slice(0, need.D), ...pools.G.slice(0, need.G)];
+    if (pick.reduce((s, p) => s + p.price, 0) > need.maxTotal && cap !== 10 ** 9) continue;
+    tx(() => {
+      if (db.prepare('SELECT COUNT(*) AS n FROM roster WHERE user_id = ?').get(userId).n === 0) {
+        for (const p of pick) db.prepare('INSERT INTO roster (user_id, player_id, bought_for) VALUES (?,?,?)').run(userId, p.id, p.price);
+      }
+      db.prepare('UPDATE users SET starter_given = 1 WHERE id = ?').run(userId);
+    });
+    return true;
+  }
+  return false; // not enough players loaded yet: try again at the next login
 }
 
 /* ---------- Helpers ---------- */
@@ -78,21 +114,32 @@ function shape(p, owned) {
     games: p.games, goals: p.goals, assists: p.assists, points: p.fantasy_pts,
     todayPts: live, tomorrow: live ? nextPrice(p.price, live) : p.price,
     locked: !!p.locked, owned: owned.has(p.id),
+    injury: p.injury_status ? { status: p.injury_status, text: p.injury_text, returnDate: p.injury_return } : null,
+    missedLast: !!p.missed_last,
+    hoursLeft: p.listing_expires ? Math.max(0, Math.ceil((new Date(p.listing_expires) - Date.now()) / 3_600_000)) : null,
+    onMarket: !!p.listing_expires && new Date(p.listing_expires) > new Date(),
   };
 }
 
-const SELECT_PLAYER = `SELECT p.*, ${LOCKED_SQL} AS locked, ${todayPtsSql} AS today_pts FROM players p`;
+/** 1 if the team played its last finished game and this player was not in it (injured, scratched, or away). */
+const LAST_DAY = `(SELECT MAX(g.day) FROM games g WHERE (g.home = p.team OR g.away = p.team) AND g.state IN ('FINAL','OFF'))`;
+const MISSED_SQL = `CASE WHEN p.games > 0 AND ${LAST_DAY} IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM day_stats ds WHERE ds.player_id = p.id AND ds.day = ${LAST_DAY}) THEN 1 ELSE 0 END`;
+
+const SELECT_PLAYER = `SELECT p.*, ${LOCKED_SQL} AS locked, ${todayPtsSql} AS today_pts, ${MISSED_SQL} AS missed_last,
+  (SELECT expires_at FROM market_listings m WHERE m.player_id = p.id) AS listing_expires FROM players p`;
 
 const ownedSet = (userId) => new Set(db.prepare('SELECT player_id FROM roster WHERE user_id = ?').all(userId).map((r) => r.player_id));
 
 /* ---------- Market ---------- */
 
 export function listPlayers(userId, { pos, q, sort, limit = 60 } = {}) {
-  const where = [];
+  refreshMarket();
+  const where = ["p.id IN (SELECT player_id FROM market_listings WHERE expires_at > '" + new Date().toISOString() + "')"];
   const args = [];
   if (pos && ['F', 'D', 'G'].includes(pos)) { where.push('p.pos = ?'); args.push(pos); }
   if (q) { where.push("(p.first || ' ' || p.last || ' ' || p.team) LIKE ?"); args.push(`%${String(q).slice(0, 40)}%`); }
-  const order = { price: 'p.price DESC', change: '(p.price - p.prev_price) * 1.0 / p.prev_price DESC', points: 'p.fantasy_pts DESC', live: 'today_pts DESC' }[sort] || 'p.price DESC';
+  const order = { expiry: 'listing_expires ASC', price: 'p.price DESC', change: '(p.price - p.prev_price) * 1.0 / p.prev_price DESC', points: 'p.fantasy_pts DESC', live: 'today_pts DESC' }[sort] || 'listing_expires ASC';
   const rows = db.prepare(`${SELECT_PLAYER} ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY ${order}, p.id LIMIT ?`)
     .all(...args, Math.min(Number(limit) || 60, 200));
   const owned = ownedSet(userId);
@@ -110,9 +157,11 @@ export function playerDetail(userId, id) {
 }
 
 export function buy(userId, playerId) {
+  refreshMarket();
   return tx(() => {
     const p = db.prepare(`${SELECT_PLAYER} WHERE p.id = ?`).get(playerId);
     if (!p) throw new HttpError(404, 'Spieler nicht gefunden.');
+    if (!(p.listing_expires && new Date(p.listing_expires) > new Date())) throw new HttpError(409, 'Dieser Spieler ist nicht auf dem Markt.');
     if (p.locked) throw new HttpError(409, 'Gesperrt: Das Team spielt heute oder der Tag ist noch nicht abgeschlossen.');
     const u = db.prepare('SELECT balance FROM users WHERE id = ?').get(userId);
     if (db.prepare('SELECT 1 FROM roster WHERE user_id = ? AND player_id = ?').get(userId, playerId)) throw new HttpError(409, 'Dieser Spieler gehört dir schon.');

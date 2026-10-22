@@ -109,11 +109,28 @@ CREATE TABLE IF NOT EXISTS user_day_points (
   PRIMARY KEY (user_id, day)
 );
 
+-- Transfer market: a player is on offer until expires_at (48 hours after he was listed).
+CREATE TABLE IF NOT EXISTS market_listings (
+  player_id INTEGER PRIMARY KEY REFERENCES players(id),
+  listed_at TEXT NOT NULL,         -- ISO time
+  expires_at TEXT NOT NULL         -- ISO time
+);
+
 CREATE TABLE IF NOT EXISTS meta (
   key TEXT PRIMARY KEY,
   value TEXT
 );
 `);
+
+/* ---------- Migrations: add columns to databases created by older versions ---------- */
+function addColumn(table, name, ddl) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
+  if (!cols.includes(name)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${ddl}`);
+}
+addColumn('players', 'injury_status', 'TEXT');   // 'out' | 'dtd' | NULL
+addColumn('players', 'injury_text', 'TEXT');
+addColumn('players', 'injury_return', 'TEXT');
+addColumn('users', 'starter_given', 'INTEGER NOT NULL DEFAULT 0');
 
 export function getMeta(key) {
   return db.prepare('SELECT value FROM meta WHERE key = ?').get(key)?.value ?? null;
