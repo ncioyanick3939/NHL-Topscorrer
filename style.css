@@ -256,3 +256,6 @@ nav.bar svg{width:24px;height:24px}
 .tagk.goal{background:var(--yellow);color:var(--navy)}.tagk.pen{background:var(--down-bg);color:var(--down)}
 .ev.pen{border-left:3px solid var(--down)}.ev.goal{border-left:3px solid var(--yellow)}
 .evs.pen{color:var(--down)}
+
+.res{display:inline-block;border-radius:6px;padding:0 6px;font:700 12px var(--f-body);margin-left:4px}
+.res.win{background:var(--up-bg);color:var(--up)}.res.loss{background:var(--down-bg);color:var(--down)}

@@ -407,3 +407,18 @@ test('game events: goals with assists and penalties are read from play-by-play',
   assert.equal(ev.penalties[0].text, 'Beinstellen');
   assert.equal(ev.penalties[0].minutes, 2);
 });
+
+test('game log results: final score from the players point of view', async () => {
+  const nhl = await import('./nhl.js');
+  const res = nhl.parseSeasonResults({ games: [
+    { id: 1, gameState: 'OFF', homeTeam: { abbrev: 'NJD', score: 4 }, awayTeam: { abbrev: 'TOR', score: 2 } },
+    { id: 2, gameState: 'OFF', homeTeam: { abbrev: 'BOS', score: 3 }, awayTeam: { abbrev: 'NJD', score: 1 }, gameOutcome: { lastPeriodType: 'OT' } },
+    { id: 3, gameState: 'FUT', homeTeam: { abbrev: 'NJD' }, awayTeam: { abbrev: 'TOR' } },
+  ] });
+  assert.equal(res.size, 2);
+  const log = [{ gameId: 1, team: 'NJD', home: true }, { gameId: 2, team: 'NJD', home: false }, { gameId: 3, team: 'NJD', home: true }];
+  nhl.addResults(log, new Map([['NJD', res]]));
+  assert.deepEqual(log[0].result, { own: 4, opp: 2, win: true, ot: false });
+  assert.deepEqual(log[1].result, { own: 1, opp: 3, win: false, ot: true });
+  assert.ok(!log[2].result);
+});

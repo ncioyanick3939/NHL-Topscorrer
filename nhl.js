@@ -162,7 +162,7 @@ export function parseGameLog(json, limit = 100) {
       bits.push(`${g.plusMinus > 0 ? '+' : ''}${g.plusMinus ?? 0}`, `${g.shots ?? 0} Schüsse`);
       text = bits.join(', ');
     }
-    return { date: g.gameDate, opp: g.opponentAbbrev, home: g.homeRoadFlag === 'H', text, pts };
+    return { gameId: g.gameId ?? null, team: g.teamAbbrev ?? null, date: g.gameDate, opp: g.opponentAbbrev, home: g.homeRoadFlag === 'H', text, pts, result: null };
   });
 }
 
@@ -208,6 +208,41 @@ export async function getGameEvents(gameId) {
   return data;
 }
 
+/** club-schedule-season -> {gameId: {home, away}} scores of finished games. */
+export function parseSeasonResults(json) {
+  const out = new Map();
+  for (const g of json.games ?? []) {
+    if ((g.gameState === 'FINAL' || g.gameState === 'OFF') && g.homeTeam?.score != null && g.awayTeam?.score != null) {
+      out.set(g.id, { home: g.homeTeam.score, away: g.awayTeam.score, ot: g.gameOutcome?.lastPeriodType === 'OT' || g.gameOutcome?.lastPeriodType === 'SO' });
+    }
+  }
+  return out;
+}
+
+/** Put the final score from the player's point of view on each game: { own, opp, win, ot } or null. */
+export function addResults(log, resultsByTeam) {
+  for (const g of log) {
+    const r = resultsByTeam.get(g.team)?.get(g.gameId) ?? (() => {
+      const row = db.prepare('SELECT home_score, away_score FROM games WHERE id = ? AND state IN (\'FINAL\',\'OFF\')').get(g.gameId);
+      return row && row.home_score != null ? { home: row.home_score, away: row.away_score, ot: false } : null;
+    })();
+    if (!r) continue;
+    const own = g.home ? r.home : r.away;
+    const opp = g.home ? r.away : r.home;
+    g.result = { own, opp, win: own > opp, ot: !!r.ot };
+  }
+  return log;
+}
+
+const seasonCache = new Map();
+async function seasonResults(team) {
+  const hit = seasonCache.get(team);
+  if (hit && Date.now() - hit.t < 30 * 60_000) return hit.data;
+  const data = parseSeasonResults(await fetchJson(`/club-schedule-season/${team}/now`));
+  seasonCache.set(team, { t: Date.now(), data });
+  return data;
+}
+
 const logCache = new Map();
 /** Last games of one player from the NHL, cached for 30 minutes. Returns null if the NHL does not answer. */
 export async function getGameLog(playerId) {
@@ -215,6 +250,11 @@ export async function getGameLog(playerId) {
   if (hit && Date.now() - hit.t < 30 * 60_000) return hit.data;
   try {
     const data = parseGameLog(await fetchJson(`/player/${playerId}/game-log/now`));
+    const byTeam = new Map();
+    for (const team of new Set(data.map((g) => g.team).filter(Boolean))) {
+      try { byTeam.set(team, await seasonResults(team)); } catch { /* the result is optional */ }
+    }
+    addResults(data, byTeam);
     logCache.set(playerId, { t: Date.now(), data });
     return data;
   } catch {

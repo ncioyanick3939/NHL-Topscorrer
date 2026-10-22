@@ -164,13 +164,14 @@ async function openPlayer(id) {
 }
 
 /** Points per game: bar chart (oldest left) and a numbered list (newest first), like Topscorers. */
+const res = (g) => (g.result ? `<span class="res ${g.result.win ? 'win' : 'loss'}">${g.result.own}:${g.result.opp}${g.result.ot ? ' n.V.' : ''} ${g.result.win ? 'S' : 'N'}</span>` : '');
 function gamesHtml(log) {
   if (!log || !log.length) return '<h2>Spiele <small>echte NHL-Daten</small></h2><div class="empty">Die Spiele konnten gerade nicht geladen werden.</div>';
   const chrono = [...log].reverse();
   const max = Math.max(1, ...chrono.map((g) => Math.abs(g.pts)));
   const dm = (s) => { const [y, m, d] = String(s).split('-'); return d && m ? `${d}.${m}.` : s; };
-  const bars = chrono.map((g) => `<div class="pbar"><b>${g.pts}</b><i style="height:${Math.max(3, Math.round(Math.abs(g.pts) / max * 70))}px" class="${g.pts < 0 ? 'neg' : ''}"></i><span>${dm(g.date)}</span></div>`).join('');
-  const list = log.map((g, k) => `<li><div><b>${chrono.length - k}. Spiel</b> · ${g.home ? 'vs' : '@'} ${esc(g.opp)} · ${dm(g.date)}<small>${esc(g.text)}</small></div><div style="text-align:right"><b>${g.pts} Pkt</b></div></li>`).join('');
+  const bars = chrono.map((g) => `<div class="pbar"><b>${g.pts}</b><i style="height:${Math.max(3, Math.round(Math.abs(g.pts) / max * 70))}px" class="${g.pts < 0 ? 'neg' : ''}"></i><span>${dm(g.date)}</span><span>${g.home ? 'vs' : '@'} ${esc(g.opp)}</span></div>`).join('');
+  const list = log.map((g, k) => `<li><div><b>${chrono.length - k}. Spiel</b> · ${g.home ? 'vs' : '@'} ${esc(g.opp)} ${res(g)}<small>${dm(g.date)} · ${esc(g.text)}</small></div><div style="text-align:right"><b>${g.pts} Pkt</b></div></li>`).join('');
   return `<h2>Punkte pro Spiel <small>${chrono.length} Spiele</small></h2><div class="pbars">${bars}</div><ul class="log">${list}</ul>`;
 }
 
