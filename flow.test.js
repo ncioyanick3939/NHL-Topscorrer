@@ -411,7 +411,11 @@ test('game events: goals with assists and penalties are read from play-by-play',
     ],
   };
   const ev = parseGameEvents(json);
-  assert.deepEqual(ev.goals, [{ period: 1, periodType: 'REG', time: '05:12', team: 'NJD', scorer: 'Nico Hischier', assists: ['Jack Hughes'], home: 1, away: 0 }]);
+  assert.equal(ev.goals.length, 1);
+  assert.equal(ev.goals[0].scorer, 'Nico Hischier');
+  assert.deepEqual(ev.goals[0].assists, ['Jack Hughes']);
+  assert.equal(ev.goals[0].strength, 'EQ');
+  assert.deepEqual(ev.periods.map((p) => [p.label, p.home, p.away]), [['1', 1, 0]]);
   assert.equal(ev.penalties[0].player, 'Auston Matthews');
   assert.equal(ev.penalties[0].text, 'Beinstellen');
   assert.equal(ev.penalties[0].minutes, 2);

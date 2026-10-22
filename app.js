@@ -463,32 +463,76 @@ async function refreshMe() { S.me = await api('/api/me'); }
 
 /* ---------- game detail ---------- */
 const PERIOD = (e) => (e.periodType === 'SO' ? 'Penaltyschiessen' : e.periodType === 'OT' ? 'Verlängerung' : `${e.period}. Drittel`);
+const POSD = { G: 'Goalie', D: 'Verteidiger', F: 'Stürmer' };
+const minuteOf = (e) => { const [m] = String(e.time).split(':').map(Number); const base = e.periodType === 'OT' ? 60 : ((e.period || 1) - 1) * 20; return base + (m || 0) + 1; };
+const numTag = (n) => (n != null ? `#${n} ` : '');
+function lineupCell(p, right) {
+  if (!p) return '<div class="lp empty-lp"></div>';
+  const c = TEAM_COLORS[p.team] || ['#2c3e63', '#fff'];
+  const ini = (p.name || '?').split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase();
+  const img = p.headshot ? `<img src="${esc(p.headshot)}" alt="" loading="lazy">` : '';
+  const ph = `<div class="lph" style="background:${c[0]};color:${c[1]}">${esc(ini)}${img}${p.toi ? `<em>${esc(p.toi)}</em>` : ''}</div>`;
+  const txt = `<div class="ltx"><small>${esc(numTag(p.number))}${POSD[p.pos]}</small><b>${esc(p.last)}</b></div>`;
+  return `<div class="lp ${right ? 'r' : ''}">${right ? txt + ph : ph + txt}</div>`;
+}
+function lineupHtml(ev) {
+  const H = ev.lineup.home, A = ev.lineup.away;
+  const stamp = (side, ab) => ['goalies', 'defense', 'forwards'].forEach((k) => side[k].forEach((p) => { p.team = ab; }));
+  stamp(H, ev.home.abbrev); stamp(A, ev.away.abbrev);
+  const rows = (l, r) => { const n = Math.max(l.length, r.length); let out = ''; for (let i = 0; i < n; i++) out += `<div class="lrow">${lineupCell(l[i])}${lineupCell(r[i], true)}</div>`; return out; };
+  let out = '';
+  if (H.goalies.length || A.goalies.length) out += `<div class="dayhead bar">Torhüter</div>${rows(H.goalies, A.goalies)}`;
+  for (let i = 0; i < 4; i++) {
+    // defensemen and forwards stay aligned row by row
+    const ld = H.defense.slice(i * 2, i * 2 + 2), rd = A.defense.slice(i * 2, i * 2 + 2), lf = H.forwards.slice(i * 3, i * 3 + 3), rf = A.forwards.slice(i * 3, i * 3 + 3);
+    if (!ld.length && !rd.length && !lf.length && !rf.length) continue;
+    out += `<div class="dayhead bar">Linie ${i + 1}</div>${rows(ld, rd)}${rows(lf, rf)}`;
+  }
+  if (!out) return '<div class="empty">Die Aufstellung ist noch nicht veröffentlicht.</div>';
+  return out + (ev.lineup.hasToi ? '<div class="note">Die Linien sind nach Eiszeit geordnet, die NHL meldet keine festen Linien.</div>' : '<div class="note">Die Linien werden nach Eiszeit geordnet, sobald das Spiel läuft.</div>');
+}
+function detailsHtml(ev) {
+  if (!ev.goals.length && !ev.penalties.length) return '<div class="empty">Bisher keine Tore und keine Strafen.</div>';
+  const secs = (e) => { const [m, s] = String(e.time).split(':').map(Number); return (m || 0) * 60 + (s || 0); };
+  const pk = (e) => (e.periodType === 'SO' ? 9 : e.periodType === 'OT' ? 4 : e.period ?? 0);
+  const goals = [...ev.goals].sort((x, y) => pk(x) - pk(y) || secs(x) - secs(y));
+  const summary = goals.length ? `<div class="gsum">${goals.map((g) => `<div><i>${g.periodType === 'SO' ? 'PS' : minuteOf(g) + "'"}</i><b>${esc(g.scorer.split(' ').slice(-1)[0].toUpperCase())}</b>${g.assists.length ? ` <small>(${g.assists.map((x) => esc(x.split(' ').slice(-1)[0].toUpperCase())).join(', ')})</small>` : ''}<span>${g.home}:${g.away}</span></div>`).join('')}</div>` : '';
+  const all = [...goals.map((e) => ({ ...e, kind: 'goal' })), ...ev.penalties.map((e) => ({ ...e, kind: 'pen' }))].sort((x, y) => pk(x) - pk(y) || secs(x) - secs(y));
+  let lastP = '';
+  const tl = all.map((e) => {
+    const p = PERIOD(e);
+    const h = p !== lastP ? `<div class="dayhead bar">${p}</div>` : '';
+    lastP = p;
+    const left = e.team === ev.home.abbrev;
+    const last = (s) => esc(String(s).split(' ').slice(-1)[0].toUpperCase());
+    const body = e.kind === 'goal'
+      ? `<div class="tt goal">${left ? '' : `Tor ${e.home}:${e.away} · `}${e.periodType === 'SO' ? 'PS' : e.strength}${left ? ` · Tor ${e.home}:${e.away}` : ''}</div><b>${esc(numTag(e.scorerNumber))}${last(e.scorer)}</b>${e.assists.length ? `<small>${e.assists.map((x, i) => esc(numTag(e.assistNumbers[i])) + last(x)).join(', ')}</small>` : ''}`
+      : `<div class="tt pen">${e.minutes} Min</div><b>${esc(numTag(e.playerNumber))}${esc(e.player.split(' ').slice(-1)[0].toUpperCase())}</b><small>${esc(e.text)}</small>`;
+    return `${h}<div class="trow ${left ? 'l' : 'r'}"><div class="tside">${left ? body : ''}</div><div class="tmid">${esc(e.time)}</div><div class="tside">${left ? '' : body}</div></div>`;
+  }).join('');
+  return summary + tl;
+}
 async function gameSheet(id) {
   const g = (S.games || []).find((x) => x.id === id);
   if (!g) return;
   const started = g.state !== 'FUT' && g.state !== 'PRE';
-  const head = `<div class="shead"><div class="ptag">${esc(g.day)}</div><div class="sname">${esc(g.home)} ${started ? `${g.homeScore ?? 0} : ${g.awayScore ?? 0}` : 'vs'} ${esc(g.away)}</div>
-    <div class="ptag">${started ? (g.state === 'FINAL' || g.state === 'OFF' ? 'Beendet' : 'Läuft') : 'Noch nicht gestartet'}</div></div>`;
-  const bg = openSheet(head + (started ? '<div class="empty" id="gbody">Lade Spieldetails …</div>' : '<div class="empty">Das Spiel hat noch nicht begonnen.</div>'));
+  const over = g.state === 'FINAL' || g.state === 'OFF';
+  const hs = started ? (g.homeScore ?? 0) : '–', as = started ? (g.awayScore ?? 0) : '–';
+  const headHtml = (periods) => `<div class="gh"><div class="gscore">${started ? `${hs}:${as}` : '–:–'}</div>
+    <div class="gper">${periods ? `(${periods})` : started ? (over ? 'Beendet' : 'Läuft') : esc(g.day)}</div>
+    <div class="gteams"><div>${logo(g.home)}<b>${esc(g.home)}</b></div><div class="r"><b>${esc(g.away)}</b>${logo(g.away)}</div></div></div>
+    <div class="gtabs"><button data-gtab="d" aria-selected="true">Details</button><button data-gtab="l" aria-selected="false">Aufstellung</button></div>`;
+  const bg = openSheet(headHtml('') + (started ? '<div class="empty" id="gbody">Lade Spieldetails …</div>' : '<div class="empty">Das Spiel hat noch nicht begonnen.</div>'));
+  bg.querySelector('.sheet').classList.add('gsheet');
   if (!started) return;
   let ev;
   try { ev = await api(`/api/games/${id}/events`); } catch (e) { const b = bg.querySelector('#gbody'); if (b) b.textContent = e.message; return; }
-  const secs = (e) => { const [m, s] = String(e.time).split(':').map(Number); return (m || 0) * 60 + (s || 0); };
-  const periodKey = (e) => (e.periodType === 'SO' ? 9 : e.periodType === 'OT' ? 4 : e.period ?? 0);
-  const all = [...ev.goals.map((e) => ({ ...e, kind: 'goal' })), ...ev.penalties.map((e) => ({ ...e, kind: 'pen' }))]
-    .sort((x, y) => periodKey(x) - periodKey(y) || secs(x) - secs(y));
-  let lastP = '';
-  const timeline = all.length ? all.map((e) => {
-    const p = PERIOD(e);
-    const h = p !== lastP ? `<div class="dayhead">${p}</div>` : '';
-    lastP = p;
-    const body = e.kind === 'goal'
-      ? `<div class="evm"><b>${esc(e.scorer)}</b><small>${e.assists.length ? 'Assists: ' + esc(e.assists.join(', ')) : 'Ohne Assist'}</small></div><div class="evs">${e.home != null ? e.home + ' : ' + e.away : ''}</div>`
-      : `<div class="evm"><b>${esc(e.player)}</b><small>${esc(e.text)}</small></div><div class="evs pen">${e.minutes} Min</div>`;
-    return `${h}<div class="ev ${e.kind}"><div class="evt">${esc(e.time)}</div>${logo(e.team)}<span class="tagk ${e.kind}">${e.kind === 'goal' ? 'TOR' : 'STRAFE'}</span>${body}</div>`;
-  }).join('') : '<div class="empty">Bisher keine Tore und keine Strafen.</div>';
-  const b = bg.querySelector('#gbody');
-  if (b) b.outerHTML = `<h2>Spielverlauf <small>${ev.goals.length} Tore · ${ev.penalties.length} Strafen</small></h2>${timeline}`;
+  const per = ev.periods.map((p) => `${p.home}:${p.away}`).join('|');
+  const gp = bg.querySelector('.gper'); if (gp && per) gp.textContent = `(${per})`;
+  const body = bg.querySelector('#gbody');
+  const show = (tab) => { body.innerHTML = tab === 'l' ? lineupHtml(ev) : detailsHtml(ev); body.classList.remove('empty'); bg.querySelectorAll('[data-gtab]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.gtab === tab))); };
+  bg.addEventListener('click', (e) => { const t = e.target.closest('[data-gtab]'); if (t) show(t.dataset.gtab); });
+  show('d');
 }
 
 /* ---------- bids, offers ---------- */

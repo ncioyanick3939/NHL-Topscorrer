@@ -271,24 +271,70 @@ const GERMAN_PENALTY = {
 };
 const penaltyText = (k) => GERMAN_PENALTY[k] ?? String(k || 'Strafe').replace(/-/g, ' ');
 
-/** gamecenter/{id}/play-by-play -> goals (with assists) and penalties in plain form. */
-export function parseGameEvents(json) {
+/** gamecenter/{id}/play-by-play (+ optional boxscore for ice time) -> goals, penalties, period scores and both lineups in plain form. */
+export function parseGameEvents(json, box = null) {
   const names = new Map();
-  for (const r of json.rosterSpots ?? []) names.set(r.playerId, `${r.firstName?.default ?? ''} ${r.lastName?.default ?? ''}`.trim());
-  const teams = new Map([[json.homeTeam?.id, json.homeTeam?.abbrev], [json.awayTeam?.id, json.awayTeam?.abbrev]]);
+  const info = new Map();
+  for (const r of json.rosterSpots ?? []) {
+    const nameStr = `${r.firstName?.default ?? ''} ${r.lastName?.default ?? ''}`.trim();
+    names.set(r.playerId, nameStr);
+    info.set(r.playerId, { id: r.playerId, teamId: r.teamId, number: r.sweaterNumber ?? null, pos: r.positionCode === 'D' ? 'D' : r.positionCode === 'G' ? 'G' : 'F',
+      name: nameStr, last: r.lastName?.default ?? nameStr, headshot: r.headshot ?? null });
+  }
+  const homeId = json.homeTeam?.id, awayId = json.awayTeam?.id;
+  const teams = new Map([[homeId, json.homeTeam?.abbrev], [awayId, json.awayTeam?.abbrev]]);
   const nm = (id) => names.get(id) ?? '?';
+  const no = (id) => info.get(id)?.number ?? null;
   const goals = [];
   const penalties = [];
+  const periods = new Map(); // key -> { label, home, away }
+  const per = (p) => {
+    const t = p.periodDescriptor?.periodType ?? 'REG', n = p.periodDescriptor?.number ?? 0;
+    const key = t === 'SO' ? 9 : t === 'OT' ? 4 : n;
+    if (!periods.has(key)) periods.set(key, { key, label: t === 'SO' ? 'PS' : t === 'OT' ? 'VL' : String(n), home: 0, away: 0 });
+    return periods.get(key);
+  };
   for (const p of json.plays ?? []) {
     const d = p.details ?? {};
     const base = { period: p.periodDescriptor?.number ?? null, periodType: p.periodDescriptor?.periodType ?? 'REG', time: p.timeInPeriod ?? '', team: teams.get(d.eventOwnerTeamId) ?? '' };
     if (p.typeDescKey === 'goal') {
-      goals.push({ ...base, scorer: nm(d.scoringPlayerId), assists: [d.assist1PlayerId, d.assist2PlayerId].filter(Boolean).map(nm), home: d.homeScore ?? null, away: d.awayScore ?? null });
+      let strength = 'EQ';
+      const sit = String(p.situationCode ?? '');
+      if (/^\d{4}$/.test(sit) && base.periodType !== 'SO') {
+        const own = Number(d.eventOwnerTeamId === homeId ? sit[2] : sit[1]);
+        const opp = Number(d.eventOwnerTeamId === homeId ? sit[1] : sit[2]);
+        strength = own > opp ? 'PP' : own < opp ? 'SH' : 'EQ';
+      }
+      goals.push({ ...base, scorer: nm(d.scoringPlayerId), scorerNumber: no(d.scoringPlayerId), assists: [d.assist1PlayerId, d.assist2PlayerId].filter(Boolean).map(nm),
+        assistNumbers: [d.assist1PlayerId, d.assist2PlayerId].filter(Boolean).map(no), strength, home: d.homeScore ?? null, away: d.awayScore ?? null });
+      if (base.periodType !== 'SO') { const pr = per(p); if (d.eventOwnerTeamId === homeId) pr.home++; else pr.away++; }
     } else if (p.typeDescKey === 'penalty') {
-      penalties.push({ ...base, player: d.committedByPlayerId ? nm(d.committedByPlayerId) : 'Bank', minutes: d.duration ?? 2, text: penaltyText(d.descKey) });
-    }
+      penalties.push({ ...base, player: d.committedByPlayerId ? nm(d.committedByPlayerId) : 'Bank', playerNumber: d.committedByPlayerId ? no(d.committedByPlayerId) : null, minutes: d.duration ?? 2, text: penaltyText(d.descKey) });
+    } else if (p.typeDescKey === 'period-start') per(p);
   }
-  return { goals, penalties };
+  // Ice time per player from the boxscore (optional).
+  const toi = new Map();
+  for (const key of ['homeTeam', 'awayTeam']) {
+    const t = box?.playerByGameStats?.[key] ?? {};
+    for (const list of [t.forwards, t.defense, t.goalies]) for (const p of list ?? []) toi.set(p.playerId, p.toi ?? null);
+  }
+  const side = (teamId) => {
+    const all = [...info.values()].filter((x) => x.teamId === teamId).map((x) => ({ ...x, toi: toi.get(x.id) ?? null }));
+    const secs = (x) => toiSeconds(x.toi);
+    const byToi = (a, b) => secs(b) - secs(a);
+    const G = all.filter((x) => x.pos === 'G').sort(byToi);
+    const D = all.filter((x) => x.pos === 'D').sort(byToi);
+    const F = all.filter((x) => x.pos === 'F').sort(byToi);
+    return { goalies: G, defense: D, forwards: F };
+  };
+  return {
+    goals, penalties,
+    home: { abbrev: json.homeTeam?.abbrev ?? '', score: json.homeTeam?.score ?? null },
+    away: { abbrev: json.awayTeam?.abbrev ?? '', score: json.awayTeam?.score ?? null },
+    state: json.gameState ?? null,
+    periods: [...periods.values()].sort((a, b) => a.key - b.key),
+    lineup: { home: side(homeId), away: side(awayId), hasToi: toi.size > 0 },
+  };
 }
 
 const eventCache = new Map();
@@ -299,7 +345,10 @@ export async function getGameEvents(gameId) {
   if (!g) return null;
   const ttl = g.state === 'FINAL' || g.state === 'OFF' ? 6 * 3_600_000 : 30_000;
   if (hit && Date.now() - hit.t < ttl) return hit.data;
-  const data = parseGameEvents(await fetchJson(`/gamecenter/${gameId}/play-by-play`));
+  const pbp = await fetchJson(`/gamecenter/${gameId}/play-by-play`);
+  let box = null;
+  try { box = await fetchJson(`/gamecenter/${gameId}/boxscore`, 1, 8000); } catch { /* ice times are optional */ }
+  const data = parseGameEvents(pbp, box);
   eventCache.set(gameId, { t: Date.now(), data });
   return data;
 }
