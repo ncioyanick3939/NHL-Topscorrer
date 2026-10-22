@@ -62,7 +62,7 @@ test('live points, trade lock, and next-day price move from real-format data', a
 
   // Game starts and Hischier scores: points appear live, price does not move yet.
   const g = { id: 1, day: '2026-10-22', state: 'LIVE' };
-  db.prepare(`INSERT INTO games (id, day, state, home, away) VALUES (1,'2026-10-22','LIVE','NJD','EDM')`).run();
+  db.prepare(`INSERT INTO games (id, day, state, home, away, start_utc) VALUES (1,'2026-10-22','LIVE','NJD','EDM', ?)`).run(new Date(Date.now() + 3_600_000).toISOString()); // starts after the manager joined
   nhl.applyBoxscore(g, nhl.parseBoxscore(box('LIVE', 1)));
   const live = game.liveView(uid);
   assert.equal(live.mine[0].pts, 50 + 3 * 2 + 5); // goal + 3 shots + plus/minus
@@ -421,4 +421,28 @@ test('game log results: final score from the players point of view', async () =>
   assert.deepEqual(log[0].result, { own: 4, opp: 2, win: true, ot: false });
   assert.deepEqual(log[1].result, { own: 1, opp: 3, win: false, ot: true });
   assert.ok(!log[2].result);
+});
+
+test('market trend: last change, live forecast and movers', async () => {
+  const { db } = await import('./db.js');
+  const game = await import('./game.js');
+  db.prepare("INSERT OR IGNORE INTO players (id, team, first, last, pos, price, prev_price) VALUES (440001,'ZZV','Up','Mover','F',110000,100000)").run();
+  db.prepare("INSERT OR IGNORE INTO players (id, team, first, last, pos, price, prev_price) VALUES (440002,'ZZV','Down','Mover','F',90000,100000)").run();
+  const t = game.marketTrend(1);
+  assert.ok(typeof t.last.pct === 'number' && typeof t.forecast.pct === 'number');
+  assert.ok(t.risers.some((p) => p.id === 440001 && p.delta === 10000));
+  assert.ok(t.fallers.some((p) => p.id === 440002 && p.delta === -10000));
+});
+
+test('points only count for games that started after the manager joined', async () => {
+  const { db } = await import('./db.js');
+  const nhl = await import('./nhl.js');
+  const mk = (n) => { db.prepare("INSERT OR IGNORE INTO users (name, salt, pw_hash, balance) VALUES (?,'s','x',0)").run(n); return db.prepare('SELECT id FROM users WHERE name=?').get(n).id; };
+  const late = mk('late_joiner');
+  db.prepare("INSERT OR IGNORE INTO players (id, team, first, last, pos, price, prev_price) VALUES (330001,'ZZU','Early','Goal','F',100000,100000)").run();
+  db.prepare("INSERT INTO roster (user_id, player_id, bought_for, lineup) VALUES (?,330001,100000,1)").run(late);
+  db.prepare("INSERT INTO games (id, day, state, home, away, start_utc) VALUES (330100,'2090-03-03','FINAL','ZZU','ZZT','2000-01-01T00:00:00Z')").run();
+  db.prepare("INSERT INTO day_stats (day, player_id, game_id, goals, pts) VALUES ('2090-03-03',330001,330100,1,50)").run();
+  nhl.finalizeDay('2090-03-03');
+  assert.equal(db.prepare('SELECT points FROM users WHERE id=?').get(late).points, 0, 'game started before he joined');
 });

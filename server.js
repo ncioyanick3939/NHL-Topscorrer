@@ -103,6 +103,7 @@ async function api(req, res, url) {
     case 'GET /api/live': return send(res, 200, game.liveView(user.id));
     case 'GET /api/rules': return send(res, 200, { SCORING, PRICE, RULES });
     case 'GET /api/games': return send(res, 200, game.allGames());
+    case 'GET /api/trend': return send(res, 200, game.marketTrend(user.id));
     case 'GET /api/ticker': return send(res, 200, game.ticker());
     case 'GET /api/topscorers': return send(res, 200, game.topscorers(user.id, { pos: q.get('pos') }));
     case 'GET /api/moves': return send(res, 200, game.recentMoves());

@@ -295,6 +295,7 @@ export function league(userId) {
   const rows = db.prepare(`SELECT u.id, u.name, u.balance, u.points,
       COALESCE((SELECT SUM(p.price) FROM roster r JOIN players p ON p.id = r.player_id WHERE r.user_id = u.id), 0) AS value,
       COALESCE((SELECT SUM(ds.pts) FROM roster r JOIN day_stats ds ON ds.player_id = r.player_id
+                JOIN games gm ON gm.id = ds.game_id AND datetime(u.created_at) <= datetime(gm.start_utc)
                 WHERE r.user_id = u.id AND r.lineup > 0 AND ds.day NOT IN (SELECT day FROM days)), 0) AS live
     FROM users u`).all();
   return rows.map((r) => ({ id: r.id, name: r.name, wealth: r.balance + r.value, value: r.value, points: r.points + r.live, live: r.live, me: r.id === userId }))
@@ -305,19 +306,20 @@ export function liveView(userId) {
   autoFill(userId);
   const inLineup = new Set(db.prepare('SELECT player_id FROM roster WHERE user_id = ? AND lineup > 0').all(userId).map((r) => r.player_id));
   const games = db.prepare(`SELECT * FROM games WHERE day NOT IN (SELECT day FROM days) OR day >= date('now','-1 day') ORDER BY day, start_utc`).all();
-  const open = db.prepare(`SELECT ds.*, p.first, p.last, p.team, p.price, p.headshot, p.pos FROM day_stats ds JOIN players p ON p.id = ds.player_id
-                           WHERE ds.day NOT IN (SELECT day FROM days)`).all();
+  const open = db.prepare(`SELECT ds.*, p.first, p.last, p.team, p.price, p.headshot, p.pos, gm.start_utc AS game_start FROM day_stats ds JOIN players p ON p.id = ds.player_id
+                           LEFT JOIN games gm ON gm.id = ds.game_id WHERE ds.day NOT IN (SELECT day FROM days)`).all();
+  const joined = new Date(String(db.prepare('SELECT created_at FROM users WHERE id = ?').get(userId)?.created_at).replace(' ', 'T') + 'Z');
   const mine = new Set(ownedSet(userId));
   const top = [...open].sort((a, b) => b.pts - a.pts).slice(0, 10)
     .map((r) => ({ id: r.player_id, name: `${r.first} ${r.last}`.trim(), team: r.team, pos: r.pos, pts: r.pts, goals: r.goals, assists: r.assists, headshot: r.headshot, mine: mine.has(r.player_id) }));
   const mineRows = open.filter((r) => mine.has(r.player_id)).sort((a, b) => b.pts - a.pts)
-    .map((r) => ({ id: r.player_id, name: `${r.first} ${r.last}`.trim(), team: r.team, pos: r.pos, pts: r.pts, goals: r.goals, assists: r.assists, headshot: r.headshot, tomorrow: nextPrice(r.price, r.pts), price: r.price, inLineup: inLineup.has(r.player_id) }));
+    .map((r) => ({ id: r.player_id, name: `${r.first} ${r.last}`.trim(), team: r.team, pos: r.pos, pts: r.pts, goals: r.goals, assists: r.assists, headshot: r.headshot, tomorrow: nextPrice(r.price, r.pts), price: r.price, inLineup: inLineup.has(r.player_id), counts: !r.game_start || new Date(r.game_start) >= joined }));
   const next = db.prepare(`SELECT MIN(start_utc) AS t FROM games WHERE state IN ('FUT','PRE') AND start_utc > ?`).get(new Date().toISOString());
   return {
     nextStart: next?.t ?? null,
     openDay: games.find((x) => x.state !== 'FINAL' && x.state !== 'OFF')?.day ?? games.at(-1)?.day ?? null,
     games: games.map((g) => ({ id: g.id, day: g.day, start: g.start_utc, state: g.state, home: g.home, away: g.away, homeScore: g.home_score, awayScore: g.away_score })),
-    top, mine: mineRows, myPoints: mineRows.filter((r) => r.inLineup).reduce((s, r) => s + r.pts, 0),
+    top, mine: mineRows, myPoints: mineRows.filter((r) => r.inLineup && r.counts).reduce((s, r) => s + r.pts, 0),
   };
 }
 
@@ -429,4 +431,27 @@ export function auctions(userId) {
 export function allGames() {
   return db.prepare('SELECT id, day, start_utc, state, home, away, home_score, away_score FROM games ORDER BY start_utc, id LIMIT 600').all()
     .map((g) => ({ id: g.id, day: g.day, start: g.start_utc, state: g.state, home: g.home, away: g.away, homeScore: g.home_score, awayScore: g.away_score }));
+}
+
+
+/** Is the market going up or down? Last price change, live forecast for tomorrow, and the biggest movers. */
+export function marketTrend(userId) {
+  refreshMarket();
+  const pct = (a, b) => (b ? Math.round(((a - b) / b) * 10_000) / 100 : 0);
+  const all = db.prepare('SELECT SUM(price) AS now, SUM(prev_price) AS before FROM players').get();
+  const iso = new Date().toISOString();
+  const listed = db.prepare(`SELECT SUM(p.price) AS now, SUM(p.prev_price) AS before FROM players p WHERE p.id IN
+    (SELECT player_id FROM market_listings WHERE expires_at > ? UNION SELECT player_id FROM user_listings WHERE expires_at > ?)`).get(iso, iso);
+  const rows = db.prepare(`${SELECT_PLAYER} WHERE p.prev_price != p.price OR ${todayPtsSql} != 0`).all();
+  const owned = ownedSet(userId);
+  const withMoves = rows.map((p) => ({ p: shape(p, owned), last: p.price - p.prev_price, soon: p.today_pts ? nextPrice(p.price, p.today_pts) - p.price : 0 }));
+  const forecastDelta = withMoves.reduce((s, r) => s + r.soon, 0);
+  const top = (key, dir) => withMoves.filter((r) => r[key] * dir > 0).sort((a, b) => (b[key] - a[key]) * dir).slice(0, 3).map((r) => ({ ...r.p, delta: r[key] }));
+  return {
+    last: { pct: pct(all.now, all.before), delta: all.now - all.before },
+    listed: { pct: pct(listed.now ?? 0, listed.before ?? 0) },
+    forecast: { pct: pct(all.now + forecastDelta, all.now), delta: forecastDelta },
+    risers: top('last', 1), fallers: top('last', -1),
+    liveRisers: top('soon', 1), liveFallers: top('soon', -1),
+  };
 }

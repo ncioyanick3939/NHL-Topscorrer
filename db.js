@@ -178,6 +178,11 @@ db.exec('CREATE UNIQUE INDEX IF NOT EXISTS roster_one_owner ON roster(player_id)
 addColumn('roster', 'lineup', 'INTEGER NOT NULL DEFAULT -1'); // -1 not placed, 0 bench, 1-3 line, 9 goalie
 addColumn('users', 'starter_given', 'INTEGER NOT NULL DEFAULT 0');
 
+// Points only count for games that started after the manager joined. Remove wrongly booked points of older versions.
+db.exec(`DELETE FROM user_day_points WHERE EXISTS (SELECT 1 FROM users u WHERE u.id = user_day_points.user_id
+  AND datetime(u.created_at) > datetime((SELECT MIN(g.start_utc) FROM games g WHERE g.day = user_day_points.day)))`);
+db.exec('UPDATE users SET points = COALESCE((SELECT SUM(pts) FROM user_day_points WHERE user_id = users.id), 0)');
+
 export function getMeta(key) {
   return db.prepare('SELECT value FROM meta WHERE key = ?').get(key)?.value ?? null;
 }

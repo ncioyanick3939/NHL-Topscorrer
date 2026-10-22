@@ -456,7 +456,11 @@ export function finalizeDay(day) {
     autoFillAll();
     db.prepare(`INSERT INTO user_day_points (user_id, day, pts)
                 SELECT r.user_id, ?, COALESCE(SUM(ds.pts),0) FROM roster r
-                JOIN day_stats ds ON ds.player_id=r.player_id AND ds.day=? WHERE r.lineup > 0 GROUP BY r.user_id`).run(day, day);
+                JOIN users u ON u.id = r.user_id
+                JOIN day_stats ds ON ds.player_id=r.player_id AND ds.day=?
+                WHERE r.lineup > 0
+                  AND datetime(u.created_at) <= datetime((SELECT MIN(start_utc) FROM games WHERE day = ?)) -- only games after joining count
+                GROUP BY r.user_id`).run(day, day, day);
     db.prepare('UPDATE users SET points = (SELECT COALESCE(SUM(pts),0) FROM user_day_points WHERE user_id=users.id)').run();
     db.prepare('INSERT INTO days (day) VALUES (?)').run(day);
   });

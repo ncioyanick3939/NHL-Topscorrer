@@ -175,6 +175,17 @@ function gamesHtml(log) {
   return `<h2>Punkte pro Spiel <small>${chrono.length} Spiele</small></h2><div class="pbars">${bars}</div><ul class="log">${list}</ul>`;
 }
 
+/** Market trend card: last change, live forecast, biggest movers. */
+function trendHtml(t, full) {
+  const arrowOf = (v) => (v > 0 ? '▲' : v < 0 ? '▼' : '–');
+  const clsOf = (v) => (v > 0 ? 'up' : v < 0 ? 'down' : 'flat');
+  const pctTxt = (v) => `${v > 0 ? '+' : ''}${v.toFixed(2)} %`;
+  const big = (label, v, sub) => `<div class="tr"><span>${label}</span><b class="${clsOf(v)}">${arrowOf(v)} ${pctTxt(v)}</b><small>${sub}</small></div>`;
+  const movers = (list, label) => (list.length ? `<div class="grp">${label}</div>${list.map((p) => `<div class="mv" data-open="${p.id}"><span>${esc(p.first[0] || '')}. ${esc(p.last)} <small>${esc(p.team)}</small></span><b class="${clsOf(p.delta)}">${p.delta > 0 ? '+' : '−'}${fmt(Math.abs(p.delta))}</b></div>`).join('')}` : '');
+  const head = `<div class="trend">${big('Markt gestern', t.last.pct, `${t.last.delta >= 0 ? '+' : '−'}${fmt(Math.abs(t.last.delta))} Gesamtwert`)}${big('Prognose heute', t.forecast.pct, 'aus den Live-Punkten')}${big('Transfermarkt', t.listed.pct, 'Ø der Angebote')}</div>`;
+  return full ? head + movers(t.liveRisers, 'Steiger heute (live)') + movers(t.liveFallers, 'Absteiger heute (live)') + movers(t.risers, 'Gewinner letzter Tag') + movers(t.fallers, 'Verlierer letzter Tag') : head;
+}
+
 /* ---------- views ---------- */
 const subtabs = (key, items) => `<div class="subtabs">${items.map(([v, l]) => `<button data-sub="${key}:${v}" aria-selected="${S.sub[key] === v}">${l}</button>`).join('')}</div>`;
 const seg = (attr, cur, items) => `<div class="seg">${items.map(([v, l]) => `<button data-${attr}="${v}" aria-pressed="${cur === v}">${l}</button>`).join('')}</div>`;
@@ -195,7 +206,7 @@ function tickCountdown() {
 
 const views = {
   async board() {
-    const [team, moves, live] = await Promise.all([api('/api/team'), api('/api/moves'), api('/api/live')]);
+    const [team, moves, live, trend] = await Promise.all([api('/api/team'), api('/api/moves'), api('/api/live'), api('/api/trend')]);
     const gain = team.value - team.invested;
     const gc = gain > 0 ? 'up' : gain < 0 ? 'down' : 'flat';
     const hurt = team.players.filter((p) => p.injury || p.missedLast);
@@ -203,6 +214,7 @@ const views = {
     return `<section class="hero"><div class="lbl">Teamwert</div><div class="big">${fmt(team.value)}</div>
       <span class="pill ${gc}">${arrow(gc)} ${gain >= 0 ? '+' : '−'}${fmt(Math.abs(gain))} seit Kauf</span></section>
       <div class="tiles"><div class="tile"><b>${S.me.rank}.</b><span>Rang</span></div><div class="tile"><b>${fmt(team.points + live.myPoints)}</b><span>Punkte</span></div><div class="tile"><b>${fmt(team.balance / 1000)}k</b><span>Konto</span></div></div>
+      <h2>Markt <small>geht er hoch oder runter?</small></h2>${trendHtml(trend, true)}
       <h2>Heute <small>${running ? running + ' Spiele laufen' : 'kein Spiel läuft'}</small></h2>
       ${live.mine.length ? live.mine.slice(0, 3).map((r) => `<div class="card" data-open="${r.id}"><div class="row"><div class="grow"><div class="pname"><span>${esc(r.team)}</span>${esc(r.name)}</div></div><div class="price"><b>${r.pts > 0 ? '+' : ''}${r.pts}</b><span class="pill flat">morgen ca. ${fmt(r.tomorrow)}</span></div></div></div>`).join('') : '<div class="empty">Heute noch keine Punkte für dein Team.</div>'}
       ${hurt.length ? `<h2>Achtung im Team <small>${hurt.length} Spieler</small></h2>${hurt.map((p) => prow(p)).join('')}` : ''}
@@ -242,15 +254,16 @@ const views = {
   },
 
   async market() {
-    const [t, au] = await Promise.all([api('/api/team'), api('/api/auctions')]);
+    const [t, au, trend] = await Promise.all([api('/api/team'), api('/api/auctions'), api('/api/trend')]);
     const bidSum = au.bids.reduce((s, b) => s + b.amount, 0);
     const after = t.balance - bidSum;
     const bal = `<div class="balbar"><span>Kontostand<b>${fmt(t.balance)}</b></span><span>Nach Geboten<b class="${after < 0 ? 'down' : ''}">${fmt(after)}</b></span><span>Kader<b>${t.players.length}/20</b></span></div>`;
     const head = '';
     const f = [['', 'Alle'], ['F', 'Stürmer'], ['D', 'Verteidiger'], ['G', 'Torhüter']];
+    const trendBar = trendHtml(trend, false);
     let list;
     if (S.mode === 'mine') {
-      return `${bal}${auctionsHtml(au)}<div class="floatseg">${seg('mode', S.mode, MODES)}</div>`;
+      return `${bal}${trendBar}${auctionsHtml(au)}<div class="floatseg">${seg('mode', S.mode, MODES)}</div>`;
     }
     if (S.mode === 'sell') {
       list = t.players.filter((p) => !S.pos || p.pos === S.pos);
@@ -260,7 +273,7 @@ const views = {
       const market = await api(`/api/players?${qs}`);
       list = market.length ? market.map((p) => prow(p, { timer: true, owned: true, rightLabel: 'Mindestgebot', btn: p.owned || p.listedBy === S.me?.name ? '' : `<button class="plus" data-bid="${p.id}" ${p.locked ? 'disabled' : ''} aria-label="Bieten">+</button>` })).join('') : '<div class="empty">Keine Spieler gefunden. Falls der Markt ganz leer bleibt, wurden die NHL-Kader noch nicht geladen (siehe README: npm run sync).</div>';
     }
-    return `${head}${bal}
+    return `${head}${bal}${trendBar}
       <div class="row2"><input class="field" id="q" type="search" placeholder="Spieler oder Team suchen" value="${esc(S.q)}" autocomplete="off">
       <select class="field" id="sort" aria-label="Sortierung">${[['expiry', 'Läuft ab'], ['price', 'Preis'], ['change', 'Änderung'], ['points', 'Punkte'], ['live', 'Live']].map(([v, l]) => `<option value="${v}" ${S.sort === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
       <div class="tabs">${f.map(([v, l]) => `<button data-pos="${v}" aria-pressed="${S.pos === v}">${l}</button>`).join('')}</div>
