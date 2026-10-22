@@ -1,0 +1,24 @@
+# Render blueprint: free web service. The database is kept in a private GitHub repo (see backup.js).
+services:
+  - type: web
+    name: nhl-topscorer
+    runtime: node
+    plan: free
+    region: frankfurt
+    buildCommand: npm install
+    startCommand: npm run start:hosted
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: COOKIE_SECURE
+        value: "1"
+      - key: TRUST_PROXY
+        value: "1"
+      - key: INVITE_CODE
+        sync: false
+      - key: BACKUP_REPO
+        sync: false
+      - key: BACKUP_TOKEN
+        sync: false

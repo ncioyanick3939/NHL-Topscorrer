@@ -9,6 +9,7 @@
   },
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning server.js",
+    "start:hosted": "node --disable-warning=ExperimentalWarning start.js",
     "sync": "node --disable-warning=ExperimentalWarning nhl.js sync",
     "stats": "node --disable-warning=ExperimentalWarning nhl.js stats",
     "injuries": "node --disable-warning=ExperimentalWarning nhl.js injuries",

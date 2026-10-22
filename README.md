@@ -20,7 +20,27 @@ Beim ersten Start lädt der Server automatisch alle 32 NHL-Kader und den Spielpl
 
 Kader von Hand neu laden: `npm run sync`. Verletzungen von Hand laden: `npm run injuries`. Einen Durchlauf von Hand starten: `npm run process`. Tests: `npm test`.
 
-## Öffentlich ins Internet stellen (gratis, läuft immer)
+## Öffentlich ins Internet stellen: gratis, ohne Kreditkarte (Render)
+
+Ein Codespace schaltet sich nach etwa 30 Minuten ohne Aktivität ab. Auf **Render** (Gratis-Plan, ohne Kreditkarte) läuft die App dauerhaft. Weil Render gratis keine bleibende Festplatte hat, speichert die App ihre Datenbank alle 10 Minuten (und beim Herunterfahren) in ein **privates GitHub-Repo** und lädt sie beim Start von dort zurück (`backup.js`, `start.js`). Damit sie nicht einschläft, ruft sie sich alle 10 Minuten selbst auf. Alles geht auch am Handy:
+
+1. **Daten-Repo:** Auf github.com → **+** → **New repository**. Name `NHL-Topscorrer-data`, **Private**, **Add a README file** ankreuzen, **Create repository**.
+2. **Token:** github.com → Profilbild → **Settings** → **Developer settings** → **Personal access tokens** → **Fine-grained tokens** → **Generate new token**.
+   - Name: `nhl-backup`, Expiration: **No expiration** (oder 1 Jahr)
+   - Repository access: **Only select repositories** → `NHL-Topscorrer-data`
+   - Permissions → Repository permissions → **Contents: Read and write**
+   - **Generate token** und den Token (`github_pat_...`) kopieren
+3. **Render:** Auf https://render.com mit **GitHub** anmelden. **New** → **Blueprint** → Repo `NHL-Topscorrer` wählen. Render liest `render.yaml` und fragt nach drei Werten:
+   - `INVITE_CODE`: dein Einladungscode für Freunde
+   - `BACKUP_REPO`: `ncioyanick3939/NHL-Topscorrer-data`
+   - `BACKUP_TOKEN`: der Token aus Schritt 2
+4. **Apply** tippen. Nach ein paar Minuten steht oben die Adresse, z.B. `https://nhl-topscorer.onrender.com`. Diese schickst du deinen Freunden.
+
+Bei jedem Push auf `main` veröffentlicht Render automatisch neu, die Daten bleiben dank Backup erhalten. Im schlimmsten Fall (Absturz ohne sauberes Herunterfahren) gehen die letzten bis zu 10 Minuten verloren. Kann das Backup beim Start nicht geladen werden, startet die App absichtlich nicht (Render versucht es wieder), damit sie nie ein gutes Backup mit einer leeren Datenbank überschreibt.
+
+Bestehende Daten aus dem Codespace mitnehmen: im Codespace einmal mit denselben Werten `BACKUP_REPO=... BACKUP_TOKEN=... npm run start:hosted` starten und mit Strg+C beenden: Dabei wird `data/app.db` ins Daten-Repo gesichert. Danach Render starten.
+
+### Alternative: eigener Server
 
 Ein Codespace schaltet sich nach etwa 30 Minuten ohne Aktivität ab. Dauerhaft und gratis läuft die App auf einem **Google Cloud „Always Free“-Server** (e2-micro). Er kostet nichts, schaltet sich nie ab und behält die Datenbank. Google verlangt bei der Anmeldung eine Kreditkarte zur Überprüfung, belastet sie aber nicht, solange du in den Gratis-Grenzen bleibst.
 
