@@ -383,3 +383,8 @@ body{min-height:100vh;min-height:calc(100dvh + 1px)}
 .fold>summary::after{content:"";width:9px;height:9px;border-right:2.5px solid var(--yellow,#ffc400);border-bottom:2.5px solid var(--yellow,#ffc400);transform:rotate(45deg);margin:0 6px 4px 10px;transition:transform .2s}
 .fold[open]>summary::after{transform:rotate(-135deg);margin-bottom:-2px}
 .fold>summary{padding:14px 0 6px}
+
+/* all games scrollable sideways, newest at the right */
+.gcols{justify-content:flex-start;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;scrollbar-width:none;gap:6px;min-width:0}
+.gcols::-webkit-scrollbar{display:none}
+.gcol{flex:0 0 54px}

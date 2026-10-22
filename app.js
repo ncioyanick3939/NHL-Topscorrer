@@ -181,6 +181,7 @@ async function openPlayer(id) {
     const a = bg.querySelector('#g1'), b = bg.querySelector('#g2');
     if (!a) return;
     a.innerHTML = gamesHtml(g.recent, g.error, d);
+    const sc = a.querySelector('[data-scrollend]'); if (sc) sc.scrollLeft = sc.scrollWidth; // newest game on the right
     b.innerHTML = gamesListHtml(g.recent);
   }).catch(() => { const a = bg.querySelector('#g1'); if (a) a.innerHTML = '<div class="empty">Die Spiele konnten gerade nicht geladen werden.</div>'; });
 }
@@ -190,7 +191,7 @@ const res = (g) => (g.result ? `<span class="res ${g.result.win ? 'win' : 'loss'
 const dm = (s) => { const [y, m, d] = String(s).split('-'); return d && m ? `${d}.${m}.` : s; };
 function gamesHtml(log, err, d) {
   if (!log || !log.length) return `<div class="empty">${log ? 'Noch keine Spiele in dieser Saison.' : 'Die Spiele konnten gerade nicht geladen werden.'}${err ? `<br><small>${esc(err)}</small>` : ''}</div>`;
-  const last = log.slice(0, 6).reverse(); // oldest on the left
+  const last = [...log].reverse(); // oldest on the left
   const mx = Math.max(1, ...last.map((g) => Math.abs(g.pts)));
   const av = d.games ? d.points / d.games : 0;
   const cols = last.map((g) => {
@@ -201,7 +202,7 @@ function gamesHtml(log, err, d) {
     const score = r ? (g.home ? `${r.own}:${r.opp}` : `${r.opp}:${r.own}`) : '';
     return `<div class="gcol"><div class="gbar"><i class="${hot ? 'hot' : ''}${g.pts < 0 ? ' neg' : ''}" style="height:${h}px"></i></div><b>${g.pts}</b><div class="glogos">${logo(left)}${logo(right)}</div><small>${score}</small></div>`;
   }).join('');
-  return `<div class="gwrap"><div class="gcols">${cols}</div><div class="season"><span>Saison 26/27</span><b>${fmt(d.points)}</b><small>Punkte</small><b>${avg(d)}</b><small>Ø</small><b>${d.games}</b><small>Spiele</small></div></div>`;
+  return `<div class="gwrap"><div class="gcols" data-scrollend>${cols}</div><div class="season"><span>Saison 26/27</span><b>${fmt(d.points)}</b><small>Punkte</small><b>${avg(d)}</b><small>Ø</small><b>${d.games}</b><small>Spiele</small></div></div>`;
 }
 function gamesListHtml(log) {
   if (!log || !log.length) return '';
