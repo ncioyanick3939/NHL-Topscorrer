@@ -335,3 +335,5 @@ nav.bar svg{width:26px;height:26px}
 
 .logo{display:grid;place-items:center;filter:drop-shadow(0 2px 3px rgba(0,0,0,.3))}
 .top{padding-top:calc(6px + env(safe-area-inset-top,0px));padding-bottom:8px}
+
+.logo .shield{height:48px;width:auto;display:block;filter:drop-shadow(0 2px 4px rgba(0,0,0,.45))}

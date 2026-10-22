@@ -364,7 +364,7 @@ async function render() {
 }
 
 const STAR = '<svg viewBox="0 0 24 24" class="star" aria-hidden="true"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.6 7-6.2-3.7-6.2 3.7 1.6-7L2 9.2l7.1-.6z"/></svg>';
-const EMBLEM = '<svg viewBox="0 0 64 64" width="54" height="54" aria-hidden="true"><path d="M32 3l8.4 17.6 19.3 2.4-14.2 13.4 3.6 19.1L32 45.8 15 55.5l3.6-19.1L4.3 23l19.3-2.4z" fill="#fff" stroke="#e5384f" stroke-width="2.4" stroke-linejoin="round"/><text x="32" y="37" text-anchor="middle" font-family="Barlow Condensed,Arial Narrow,sans-serif" font-weight="800" font-size="11.5" letter-spacing=".2" fill="#173f96">NHL</text></svg>';
+const EMBLEM = '<img src="/nhl-logo.png" alt="NHL" class="shield">';
 function header() {
   return `<header class="top"><div class="top-in"><div class="chip">Saison 26/27</div><div class="logo" aria-label="NHL Topscorer">${EMBLEM}</div>
     <button class="gear" data-settings aria-label="Einstellungen"><svg viewBox="0 0 24 24"><path d="M19.4 13a7.6 7.6 0 000-2l2-1.6-2-3.4-2.4 1a7.5 7.5 0 00-1.7-1L15 3.4h-4l-.4 2.6a7.5 7.5 0 00-1.7 1l-2.4-1-2 3.4 2 1.6a7.6 7.6 0 000 2l-2 1.6 2 3.4 2.4-1a7.5 7.5 0 001.7 1l.4 2.6h4l.4-2.6a7.5 7.5 0 001.7-1l2.4 1 2-3.4zM13 15.5a3.5 3.5 0 110-7 3.5 3.5 0 010 7z" transform="translate(-1 0)"/></svg></button></div></header>`;
