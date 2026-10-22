@@ -51,7 +51,7 @@ function avatar(p, large) {
   const c = TEAM_COLORS[p.team] || ['#2c3e63', '#fff'];
   const ini = ((p.first || '').charAt(0) + (p.last || '').charAt(0)).toUpperCase();
   const img = p.headshot ? `<img class="ph" src="${esc(p.headshot)}" alt="" loading="lazy">` : '';
-  return `<div class="av${large ? ' lg' : ''}" style="background:${c[0]};color:${c[1]}">${esc(ini)}${img}<i>${esc(p.pos)}</i></div>`;
+  return `<div class="av${large ? ' lg' : ''}" style="background:${c[0]};color:${c[1]};--tc:${c[0]}">${esc(ini)}${img}<i>${esc(p.pos)}</i></div>`;
 }
 
 function spark(h) {
@@ -110,7 +110,8 @@ function prow(p, o = {}) {
   const badges = [p.lineup > 0 ? '<span class="lock lineup">In Aufstellung</span>' : '', gameBadge(p), injuryBadge(p), p.locked ? '<span class="lock">Gesperrt</span>' : '', p.owned && o.owned ? '<span class="lock own">Im Kader</span>' : '', p.ownerName && !p.owned ? `<span class="lock">Im Kader von ${esc(p.ownerName)}</span>` : '', p.myBid ? `<span class="lock own">Dein Gebot ${fmt(p.myBid)}</span>` : '', p.listedBy ? `<span class="lock">Angebot von ${esc(p.listedBy)}</span>` : ''].filter(Boolean).join(' ');
   const right = o.right ?? `<b>${fmt(p.price)}</b><small>${o.rightLabel || 'Marktwert'}</small>`;
   const sub = o.sub ?? `<b>${fmt(p.points)}</b><small>Punkte</small><b>${avg(p)}</b><small>Ø Punkte</small>`;
-  return `<div class="prow${o.btn ? ' hasbtn' : ''}" data-open="${p.id}" tabindex="0" role="button" aria-label="${esc(p.first + ' ' + p.last)}">
+ const tc = (TEAM_COLORS[p.team] || ['#2c3e63'])[0];
+  return `<div class="prow${o.btn ? ' hasbtn' : ''}" style="--tc:${tc}" data-num="${p.number ?? ''}" data-open="${p.id}" tabindex="0" role="button" aria-label="${esc(p.first + ' ' + p.last)}">
     ${avatar(p)}<div class="pmain"><div class="ptag">${esc(tag)}${nhl}${o.timer && p.onMarket ? ` <span class="timer">noch ${hoursText(p.hoursLeft)}</span>` : ''}</div>
       <div class="pn">${esc(p.last)}${p.first ? `<small>${esc(p.first)}</small>` : ''}</div>
       <div class="pnums">${sub}</div>${badges ? `<div class="pbadges">${badges}</div>` : ''}</div>
@@ -211,8 +212,20 @@ const views = {
     const gc = gain > 0 ? 'up' : gain < 0 ? 'down' : 'flat';
     const hurt = team.players.filter((p) => p.injury || p.missedLast);
     const running = live.games.filter((g) => g.state === 'LIVE' || g.state === 'CRIT').length;
-    return `<section class="hero"><div class="lbl">Teamwert</div><div class="big">${fmt(team.value)}</div>
-      <span class="pill ${gc}">${arrow(gc)} ${gain >= 0 ? '+' : '−'}${fmt(Math.abs(gain))} seit Kauf</span></section>
+    return `<section class="rink"><svg viewBox="0 0 400 210" preserveAspectRatio="none" aria-hidden="true">
+        <line x1="200" y1="0" x2="200" y2="210" stroke="#e4202f" stroke-width="5" opacity=".35"/>
+        <line x1="128" y1="0" x2="128" y2="210" stroke="#1f4fd1" stroke-width="7" opacity=".25"/>
+        <line x1="272" y1="0" x2="272" y2="210" stroke="#1f4fd1" stroke-width="7" opacity=".25"/>
+        <line x1="34" y1="0" x2="34" y2="210" stroke="#e4202f" stroke-width="2" opacity=".4"/>
+        <line x1="366" y1="0" x2="366" y2="210" stroke="#e4202f" stroke-width="2" opacity=".4"/>
+        <circle cx="200" cy="105" r="62" fill="none" stroke="#1f4fd1" stroke-width="3" opacity=".3"/>
+        <circle cx="200" cy="105" r="5" fill="#1f4fd1" opacity=".35"/>
+        <circle cx="72" cy="50" r="26" fill="none" stroke="#e4202f" stroke-width="2" opacity=".3"/>
+        <circle cx="72" cy="160" r="26" fill="none" stroke="#e4202f" stroke-width="2" opacity=".3"/>
+        <circle cx="328" cy="50" r="26" fill="none" stroke="#e4202f" stroke-width="2" opacity=".3"/>
+        <circle cx="328" cy="160" r="26" fill="none" stroke="#e4202f" stroke-width="2" opacity=".3"/></svg>
+      <div class="core"><div class="lbl">Dein Teamwert</div><div class="big">${fmt(team.value)}</div>
+      <span class="pill ${gc}">${arrow(gc)} ${gain >= 0 ? '+' : '−'}${fmt(Math.abs(gain))} seit Kauf</span></div></section>
       <div class="tiles"><div class="tile"><b>${S.me.rank}.</b><span>Rang</span></div><div class="tile"><b>${fmt(team.points + live.myPoints)}</b><span>Punkte</span></div><div class="tile"><b>${fmt(team.balance / 1000)}k</b><span>Konto</span></div></div>
       <h2>Markt <small>geht er hoch oder runter?</small></h2>${trendHtml(trend, true)}
       <h2>Heute <small>${running ? running + ' Spiele laufen' : 'kein Spiel läuft'}</small></h2>
@@ -358,7 +371,7 @@ async function render() {
 
 const STAR = '<svg viewBox="0 0 24 24" class="star" aria-hidden="true"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.6 7-6.2-3.7-6.2 3.7 1.6-7L2 9.2l7.1-.6z"/></svg>';
 function header() {
-  return `<header class="top"><div class="top-in"><div class="chip">Saison 26/27</div><div class="logo">${STAR}<b>NHL</b><span>Topscorer</span></div>
+  return `<header class="top"><div class="top-in"><div class="chip">Saison 26/27</div><div class="logo"><b>NHL</b><span>Topscorer</span></div>
     <button class="gear" data-settings aria-label="Einstellungen"><svg viewBox="0 0 24 24"><path d="M19.4 13a7.6 7.6 0 000-2l2-1.6-2-3.4-2.4 1a7.5 7.5 0 00-1.7-1L15 3.4h-4l-.4 2.6a7.5 7.5 0 00-1.7 1l-2.4-1-2 3.4 2 1.6a7.6 7.6 0 000 2l-2 1.6 2 3.4 2.4-1a7.5 7.5 0 001.7 1l.4 2.6h4l.4-2.6a7.5 7.5 0 001.7-1l2.4 1 2-3.4zM13 15.5a3.5 3.5 0 110-7 3.5 3.5 0 010 7z" transform="translate(-1 0)"/></svg></button></div></header>`;
 }
 
