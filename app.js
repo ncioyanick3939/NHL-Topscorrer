@@ -82,6 +82,17 @@ const ago = (iso) => {
   return m < 60 ? `${m} Min` : m < 1440 ? `${Math.round(m / 60)} Std` : `${Math.round(m / 1440)} T`;
 };
 
+/** Line-Up = he is on the ice in the running game (the NHL publishes no lineup before puck drop). Before: when the team plays. */
+function gameBadge(p) {
+  const g = p.nextGame;
+  if (p.dressed) return g ? '<span class="lock lineup">Line-Up</span>' : '<span class="lock">Gespielt</span>';
+  if (g && (g.state === 'FUT' || g.state === 'PRE')) {
+    const t = new Date(g.start).toLocaleString('de-CH', { weekday: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Zurich' });
+    return `<span class="lock">Spielt ${t}</span>`;
+  }
+  return '';
+}
+
 function injuryBadge(p) {
   if (p.injury) {
     const out = p.injury.status === 'out';
@@ -94,7 +105,7 @@ function injuryBadge(p) {
 /** One player row in the Topscorers style: photo, position, name, points, value. */
 function prow(p, o = {}) {
   const tag = (p.number != null ? '#' + p.number + ' ' : '') + POS[p.pos];
-  const badges = [injuryBadge(p), p.locked ? '<span class="lock">Gesperrt</span>' : '', p.owned && o.owned ? '<span class="lock own">Im Kader</span>' : '', p.myBid ? `<span class="lock own">Dein Gebot ${fmt(p.myBid)}</span>` : '', p.listedBy ? `<span class="lock">Angebot von ${esc(p.listedBy)}</span>` : ''].filter(Boolean).join(' ');
+  const badges = [gameBadge(p), injuryBadge(p), p.locked ? '<span class="lock">Gesperrt</span>' : '', p.owned && o.owned ? '<span class="lock own">Im Kader</span>' : '', p.myBid ? `<span class="lock own">Dein Gebot ${fmt(p.myBid)}</span>` : '', p.listedBy ? `<span class="lock">Angebot von ${esc(p.listedBy)}</span>` : ''].filter(Boolean).join(' ');
   const right = o.right ?? `<b>${fmt(p.price)}</b><small>${o.rightLabel || 'Marktwert'}</small>`;
   const sub = o.sub ?? `<b>${fmt(p.points)}</b><small>Punkte</small><b>${avg(p)}</b><small>Ø Punkte</small>`;
   return `<div class="prow${o.btn ? ' hasbtn' : ''}" data-open="${p.id}" tabindex="0" role="button" aria-label="${esc(p.first + ' ' + p.last)}">
@@ -262,7 +273,7 @@ const views = {
     const playing = t.players.filter((p) => playingTeams.has(p.team));
     const off = t.players.filter((p) => !playingTeams.has(p.team));
     const shown = S.sub.live === 'off' ? off : playing;
-    const row = (p) => { const r = pts.get(p.id); return prow(p, { sub: `<b>${r ? r.goals : 0}</b><small>Tore</small><b>${r ? r.assists : 0}</b><small>Assists</small>`, right: `<b class="${r && r.pts > 0 ? 'up' : ''}">${r ? (r.pts > 0 ? '+' : '') + r.pts : 0}</b><small>Live</small>` }); };
+    const row = (p) => { const r = pts.get(p.id); return prow(p, { sub: p.dressed ? `<b>${r ? r.goals : 0}</b><small>Tore</small><b>${r ? r.assists : 0}</b><small>Assists</small>` : '<small>noch kein Einsatz</small>', right: `<b class="${r && r.pts > 0 ? 'up' : ''}">${r ? (r.pts > 0 ? '+' : '') + r.pts : 0}</b><small>Live</small>` }); };
     return `${running ? '<div class="livebar"><i></i>Spiele laufen · deine Punkte heute: <b>' + d.myPoints + '</b></div>' : countdown(d.nextStart)}
       ${shown.length ? shown.map(row).join('') : `<div class="empty">${S.sub.live === 'off' ? 'Alle deine Spieler haben heute ein Spiel.' : 'Heute spielt keiner deiner Spieler.'}</div>`}
       <div class="floatseg">${seg('lsub', S.sub.live, [['play', 'Im Spiel (' + playing.length + ')'], ['off', 'Spielfrei (' + off.length + ')']])}</div>

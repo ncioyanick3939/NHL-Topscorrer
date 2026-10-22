@@ -103,6 +103,14 @@ function history(playerId, n = 14) {
     .all(playerId, n).map((r) => r.price).reverse();
 }
 
+/** The next unfinished game of the team: only when it starts within 24 hours or is running. */
+function nextGame(raw) {
+  if (!raw) return null;
+  const [start, state] = raw.split('|');
+  const live = state === 'LIVE' || state === 'CRIT';
+  return live || new Date(start) - Date.now() < 24 * 3_600_000 ? { start, state } : null;
+}
+
 function shape(p, owned) {
   const hist = history(p.id);
   const live = p.today_pts ?? 0;
@@ -116,6 +124,7 @@ function shape(p, owned) {
     missedLast: !!p.missed_last,
     hoursLeft: p.listing_expires ? Math.max(0, Math.ceil((new Date(p.listing_expires) - Date.now()) / 3_600_000)) : null,
     onMarket: !!p.listing_expires && new Date(p.listing_expires) > new Date(),
+    dressed: !!p.dressed, nextGame: nextGame(p.next_game),
     listedBy: p.listed_by ?? null, minBid: p.listed_by ? PRICE.minPrice : p.price_floor ?? p.price,
   };
 }
@@ -132,6 +141,9 @@ const MISSED_SQL = `CASE WHEN p.pos != 'G' AND p.games > 0 AND ${LAST_GAME} IS N
 
 const SELECT_PLAYER = `SELECT p.*, ${LOCKED_SQL} AS locked, ${todayPtsSql} AS today_pts, ${MISSED_SQL} AS missed_last,
   COALESCE((SELECT expires_at FROM market_listings m WHERE m.player_id = p.id), (SELECT expires_at FROM user_listings l WHERE l.player_id = p.id)) AS listing_expires,
+  (SELECT g.start_utc || '|' || g.state FROM games g WHERE (g.home = p.team OR g.away = p.team) AND g.day NOT IN (SELECT day FROM days)
+     AND g.state NOT IN ('FINAL','OFF') ORDER BY g.start_utc LIMIT 1) AS next_game,
+  EXISTS (SELECT 1 FROM day_stats d WHERE d.player_id = p.id AND d.day NOT IN (SELECT day FROM days)) AS dressed,
   (SELECT u.name FROM user_listings l JOIN users u ON u.id = l.seller_id WHERE l.player_id = p.id) AS listed_by,
   (SELECT l.seller_id FROM user_listings l WHERE l.player_id = p.id) AS listed_by_id FROM players p`;
 
