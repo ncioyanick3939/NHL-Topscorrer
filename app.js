@@ -169,9 +169,9 @@ function gamesHtml(log) {
   const chrono = [...log].reverse();
   const max = Math.max(1, ...chrono.map((g) => Math.abs(g.pts)));
   const dm = (s) => { const [y, m, d] = String(s).split('-'); return d && m ? `${d}.${m}.` : s; };
-  const bars = chrono.map((g) => `<div class="bar"><b>${g.pts}</b><i style="height:${Math.max(3, Math.round(Math.abs(g.pts) / max * 70))}px" class="${g.pts < 0 ? 'neg' : ''}"></i><span>${dm(g.date)}</span></div>`).join('');
+  const bars = chrono.map((g) => `<div class="pbar"><b>${g.pts}</b><i style="height:${Math.max(3, Math.round(Math.abs(g.pts) / max * 70))}px" class="${g.pts < 0 ? 'neg' : ''}"></i><span>${dm(g.date)}</span></div>`).join('');
   const list = log.map((g, k) => `<li><div><b>${chrono.length - k}. Spiel</b> · ${g.home ? 'vs' : '@'} ${esc(g.opp)} · ${dm(g.date)}<small>${esc(g.text)}</small></div><div style="text-align:right"><b>${g.pts} Pkt</b></div></li>`).join('');
-  return `<h2>Punkte pro Spiel <small>${chrono.length} Spiele</small></h2><div class="bars">${bars}</div><ul class="log">${list}</ul>`;
+  return `<h2>Punkte pro Spiel <small>${chrono.length} Spiele</small></h2><div class="pbars">${bars}</div><ul class="log">${list}</ul>`;
 }
 
 /* ---------- views ---------- */
