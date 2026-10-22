@@ -1,0 +1,16 @@
+{
+  "name": "nhl-topscorer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Private NHL fantasy app: player prices move with real game results.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.5"
+  },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning server.js",
+    "sync": "node --disable-warning=ExperimentalWarning nhl.js sync",
+    "process": "node --disable-warning=ExperimentalWarning nhl.js process",
+    "test": "node --disable-warning=ExperimentalWarning --test flow.test.js"
+  }
+}

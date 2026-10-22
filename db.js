@@ -1,0 +1,136 @@
+import { DatabaseSync } from 'node:sqlite';
+import { mkdirSync } from 'node:fs';
+import { dirname } from 'node:path';
+
+const DB_PATH = process.env.DB_PATH || new URL('./data/app.db', import.meta.url).pathname;
+mkdirSync(dirname(DB_PATH), { recursive: true });
+
+export const db = new DatabaseSync(DB_PATH);
+db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
+
+db.exec(`
+CREATE TABLE IF NOT EXISTS players (
+  id INTEGER PRIMARY KEY,          -- NHL player id
+  team TEXT NOT NULL,
+  first TEXT NOT NULL,
+  last TEXT NOT NULL,
+  pos TEXT NOT NULL,               -- F, D, G
+  number INTEGER,
+  headshot TEXT,
+  price INTEGER NOT NULL,
+  prev_price INTEGER NOT NULL,
+  games INTEGER NOT NULL DEFAULT 0,
+  goals INTEGER NOT NULL DEFAULT 0,
+  assists INTEGER NOT NULL DEFAULT 0,
+  plus_minus INTEGER NOT NULL DEFAULT 0,
+  shots INTEGER NOT NULL DEFAULT 0,
+  blocked INTEGER NOT NULL DEFAULT 0,
+  pim INTEGER NOT NULL DEFAULT 0,
+  wins INTEGER NOT NULL DEFAULT 0,
+  fantasy_pts INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS players_team ON players(team);
+
+CREATE TABLE IF NOT EXISTS price_history (
+  player_id INTEGER NOT NULL REFERENCES players(id),
+  day TEXT NOT NULL,               -- YYYY-MM-DD of the game day
+  price INTEGER NOT NULL,
+  pts INTEGER NOT NULL DEFAULT 0,  -- fantasy points earned that day
+  summary TEXT,                    -- e.g. "1 Tor, 2 Assists"
+  PRIMARY KEY (player_id, day)
+);
+
+CREATE TABLE IF NOT EXISTS users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  salt TEXT NOT NULL,
+  pw_hash TEXT NOT NULL,
+  balance INTEGER NOT NULL,
+  points INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+  token TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  expires INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS roster (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  player_id INTEGER NOT NULL REFERENCES players(id),
+  bought_for INTEGER NOT NULL,
+  bought_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (user_id, player_id)
+);
+
+-- One row per NHL game, filled from the schedule. day = NHL game date (YYYY-MM-DD).
+CREATE TABLE IF NOT EXISTS games (
+  id INTEGER PRIMARY KEY,
+  day TEXT NOT NULL,
+  start_utc TEXT,
+  state TEXT NOT NULL,             -- FUT, PRE, LIVE, CRIT, FINAL, OFF
+  home TEXT NOT NULL,
+  away TEXT NOT NULL,
+  home_score INTEGER,
+  away_score INTEGER
+);
+CREATE INDEX IF NOT EXISTS games_day ON games(day);
+
+-- Live stats of a player for one game day. Overwritten on every poll (boxscore is cumulative).
+CREATE TABLE IF NOT EXISTS day_stats (
+  player_id INTEGER NOT NULL REFERENCES players(id),
+  day TEXT NOT NULL,
+  game_id INTEGER NOT NULL,
+  goals INTEGER NOT NULL DEFAULT 0,
+  assists INTEGER NOT NULL DEFAULT 0,
+  shots INTEGER NOT NULL DEFAULT 0,
+  blocked INTEGER NOT NULL DEFAULT 0,
+  pim INTEGER NOT NULL DEFAULT 0,
+  plus_minus INTEGER NOT NULL DEFAULT 0,
+  saves INTEGER NOT NULL DEFAULT 0,
+  goals_against INTEGER NOT NULL DEFAULT 0,
+  win INTEGER NOT NULL DEFAULT 0,
+  shutout INTEGER NOT NULL DEFAULT 0,
+  pts INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (player_id, day)
+);
+
+-- A day is finalized once: prices move, season stats and manager points are booked.
+CREATE TABLE IF NOT EXISTS days (
+  day TEXT PRIMARY KEY,
+  finalized_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS user_day_points (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  day TEXT NOT NULL,
+  pts INTEGER NOT NULL,
+  PRIMARY KEY (user_id, day)
+);
+
+CREATE TABLE IF NOT EXISTS meta (
+  key TEXT PRIMARY KEY,
+  value TEXT
+);
+`);
+
+export function getMeta(key) {
+  return db.prepare('SELECT value FROM meta WHERE key = ?').get(key)?.value ?? null;
+}
+export function setMeta(key, value) {
+  db.prepare('INSERT INTO meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(key, String(value));
+}
+
+/** Run fn inside a transaction; rolls back on throw. */
+export function tx(fn) {
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const r = fn();
+    db.exec('COMMIT');
+    return r;
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+}

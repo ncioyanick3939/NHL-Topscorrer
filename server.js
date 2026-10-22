@@ -1,0 +1,150 @@
+import { createServer } from 'node:http';
+import { readFile, mkdir, writeFile } from 'node:fs/promises';
+import { existsSync, readFileSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
+import { extname, join } from 'node:path';
+import * as game from './game.js';
+import { startScheduler } from './nhl.js';
+
+const ROOT = new URL('.', import.meta.url).pathname;
+const PORT = Number(process.env.PORT || 3000);
+const SECURE = process.env.COOKIE_SECURE === '1'; // set to 1 when served over HTTPS
+
+/* Invite code: env INVITE_CODE, else a random one saved to data/invite-code.txt */
+async function loadInvite() {
+  if (process.env.INVITE_CODE) return process.env.INVITE_CODE;
+  const f = join(ROOT, 'data', 'invite-code.txt');
+  if (existsSync(f)) return readFileSync(f, 'utf8').trim();
+  const code = randomBytes(4).toString('hex');
+  await mkdir(join(ROOT, 'data'), { recursive: true });
+  await writeFile(f, code + '\n');
+  return code;
+}
+const INVITE = await loadInvite();
+
+const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon' };
+
+const attempts = new Map(); // ip -> [timestamps]
+function tooManyLogins(ip) {
+  const now = Date.now();
+  const list = (attempts.get(ip) ?? []).filter((t) => now - t < 60_000);
+  list.push(now);
+  attempts.set(ip, list);
+  return list.length > 8;
+}
+
+function cookies(req) {
+  const out = {};
+  for (const part of (req.headers.cookie || '').split(';')) {
+    const i = part.indexOf('=');
+    if (i > 0) out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim());
+  }
+  return out;
+}
+
+async function body(req) {
+  let size = 0;
+  const chunks = [];
+  for await (const c of req) {
+    size += c.length;
+    if (size > 10_000) throw new game.HttpError(413, 'Anfrage zu gross.');
+    chunks.push(c);
+  }
+  if (!chunks.length) return {};
+  try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); }
+  catch { throw new game.HttpError(400, 'Ungültige Anfrage.'); }
+}
+
+function send(res, status, data, headers = {}) {
+  const json = JSON.stringify(data);
+  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...headers });
+  res.end(json);
+}
+
+const sessionCookie = (token, expires) =>
+  `sid=${token}; HttpOnly; SameSite=Lax; Path=/; Expires=${new Date(expires).toUTCString()}${SECURE ? '; Secure' : ''}`;
+
+async function api(req, res, url) {
+  const route = `${req.method} ${url.pathname}`;
+  const q = url.searchParams;
+  const ip = req.socket.remoteAddress;
+
+  if (req.method === 'POST' && !String(req.headers['content-type'] || '').startsWith('application/json')) {
+    throw new game.HttpError(415, 'Nur JSON erlaubt.');
+  }
+
+  if (route === 'POST /api/register' || route === 'POST /api/login') {
+    if (tooManyLogins(ip)) throw new game.HttpError(429, 'Zu viele Versuche. Bitte eine Minute warten.');
+    const b = await body(req);
+    const id = route.endsWith('register') ? game.register(b.name, b.password, b.invite, INVITE) : game.login(b.name, b.password);
+    const s = game.createSession(id);
+    return send(res, 200, { ok: true }, { 'Set-Cookie': sessionCookie(s.token, s.expires) });
+  }
+
+  const token = cookies(req).sid;
+  const user = game.userFromToken(token);
+  if (!user) throw new game.HttpError(401, 'Bitte anmelden.');
+
+  switch (route) {
+    case 'POST /api/logout':
+      game.destroySession(token);
+      return send(res, 200, { ok: true }, { 'Set-Cookie': 'sid=; HttpOnly; Path=/; Max-Age=0' });
+    case 'GET /api/me': {
+      const team = game.myTeam(user.id);
+      const rank = game.league(user.id).findIndex((r) => r.me) + 1;
+      return send(res, 200, { name: user.name, balance: team.balance, value: team.value, points: team.points, rank, count: team.players.length });
+    }
+    case 'GET /api/players':
+      return send(res, 200, game.listPlayers(user.id, { pos: q.get('pos'), q: q.get('q'), sort: q.get('sort'), limit: q.get('limit') }));
+    case 'GET /api/team': return send(res, 200, game.myTeam(user.id));
+    case 'GET /api/league': return send(res, 200, game.league(user.id));
+    case 'GET /api/live': return send(res, 200, game.liveView(user.id));
+    case 'GET /api/moves': return send(res, 200, game.recentMoves());
+    case 'POST /api/buy': return send(res, 200, game.buy(user.id, Number((await body(req)).playerId)));
+    case 'POST /api/sell': return send(res, 200, game.sell(user.id, Number((await body(req)).playerId)));
+  }
+  const m = url.pathname.match(/^\/api\/players\/(\d+)$/);
+  if (m && req.method === 'GET') return send(res, 200, game.playerDetail(user.id, Number(m[1])));
+  throw new game.HttpError(404, 'Nicht gefunden.');
+}
+
+// Only these three files are public. Code, database and invite code live in the same folder and must never be served.
+const STATIC = { '/': 'index.html', '/index.html': 'index.html', '/style.css': 'style.css', '/app.js': 'app.js' };
+
+async function serveStatic(req, res, url) {
+  const name = STATIC[url.pathname];
+  const file = name && join(ROOT, name);
+  try {
+    if (!file) throw new Error('not public');
+    const data = await readFile(file);
+    res.writeHead(200, { 'Content-Type': TYPES[extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-cache' });
+    res.end(data);
+  } catch {
+    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('Nicht gefunden');
+  }
+}
+
+const server = createServer(async (req, res) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'same-origin');
+  res.setHeader('Content-Security-Policy',
+    "default-src 'self'; img-src 'self' https://assets.nhle.com data:; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; font-src https://fonts.gstatic.com; script-src 'self'");
+  try {
+    const url = new URL(req.url, 'http://localhost');
+    if (url.pathname.startsWith('/api/')) return await api(req, res, url);
+    return await serveStatic(req, res, url);
+  } catch (e) {
+    if (e instanceof game.HttpError) return send(res, e.status, { error: e.message });
+    console.error(e);
+    return send(res, 500, { error: 'Serverfehler.' });
+  }
+});
+
+server.listen(PORT, () => {
+  console.log(`NHL Topscorer läuft auf http://localhost:${PORT}`);
+  console.log(`Einladungscode für neue Manager: ${INVITE}`);
+  if (process.env.NO_SCHEDULER !== '1') startScheduler();
+});
+
+export { server };

@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f6cd45">
+<title>NHL Topscorer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div id="app"></div>
+<nav class="bar" id="nav" hidden><div role="tablist">
+  <button role="tab" data-t="board"><svg viewBox="0 0 24 24"><path d="M3 3h8v10H3zM13 3h8v6h-8zM3 15h8v6H3zM13 11h8v10h-8z"/></svg>Board</button>
+  <button role="tab" data-t="market"><svg viewBox="0 0 24 24"><path d="M4 18l5-6 4 4 7-9-1.6-1.2L13 13l-4-4-6.4 7.6zM3 20h18v2H3z"/></svg>Markt</button>
+  <button role="tab" data-t="team"><svg viewBox="0 0 24 24"><path d="M12 12a4 4 0 100-8 4 4 0 000 8zm0 2c-4 0-8 2-8 5v2h16v-2c0-3-4-5-8-5z"/></svg>Team</button>
+  <button role="tab" data-t="league"><svg viewBox="0 0 24 24"><path d="M7 4h10v3a5 5 0 01-4 4.9V15h3v2H8v-2h3v-3.1A5 5 0 017 7zM4 5h2v3a3 3 0 01-2-2zm14 0h2v1a3 3 0 01-2 2z"/></svg>Liga</button>
+  <button role="tab" data-t="live"><svg viewBox="0 0 24 24"><path d="M13 2s1 4-2 7c-2 2-4 3-4 7a6 6 0 0012 0c0-3-2-4-3-6-1 2-2 3-3 3 1-4 1-8 0-11z"/></svg>Live</button>
+</div></nav>
+<script src="/app.js" type="module"></script>
+</body>
+</html>
