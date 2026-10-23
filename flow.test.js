@@ -307,6 +307,20 @@ test('lineup: 3 lines of 3F + 2D + 1 goalie, extra players on the bench, only th
   game.setLineup(uid, bench.id, 1);
   assert.equal(game.myTeam(uid).players.find((p) => p.id === bench.id).lineup, 1);
   assert.throws(() => game.setLineup(uid, bench.id, 9), /Ungültig/);
+
+  // Swap in one step: a line-2 forward takes the line-1 slot of bench.id, who moves to line 2.
+  const line2 = game.myTeam(uid).players.find((p) => p.lineup === 2 && p.pos === 'F');
+  game.setLineup(uid, line2.id, 1, bench.id);
+  const after = new Map(game.myTeam(uid).players.map((p) => [p.id, p.lineup]));
+  assert.equal(after.get(line2.id), 1);
+  assert.equal(after.get(bench.id), 2);
+  // A bench player replaces a starter, who goes to the bench.
+  game.setLineup(uid, starter.id, 1, line2.id);
+  assert.equal(game.myTeam(uid).players.find((p) => p.id === line2.id).lineup, 0);
+  // Only within the same position, and only for the player who really holds the slot.
+  const d1 = game.myTeam(uid).players.find((p) => p.lineup === 1 && p.pos === 'D');
+  assert.throws(() => game.setLineup(uid, line2.id, 1, d1.id), /derselben Position/);
+  assert.throws(() => game.setLineup(uid, line2.id, 3, starter.id), /geändert/);
   autoFillAll();
 });
 

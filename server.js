@@ -117,7 +117,7 @@ async function api(req, res, url) {
     case 'POST /api/offer': return send(res, 200, game.offerPlayer(user.id, Number((await body(req)).playerId)));
     case 'POST /api/offer/cancel': return send(res, 200, game.cancelOffer(user.id, Number((await body(req)).playerId)));
     case 'POST /api/accept': { const b = await body(req); return send(res, 200, game.acceptBid(user.id, Number(b.playerId), Number(b.bidderId))); }
-    case 'POST /api/lineup': { const b = await body(req); return send(res, 200, game.setLineup(user.id, Number(b.playerId), Number(b.line))); }
+    case 'POST /api/lineup': { const b = await body(req); return send(res, 200, game.setLineup(user.id, Number(b.playerId), Number(b.line), b.replaceId ? Number(b.replaceId) : null)); }
     case 'POST /api/sell': return send(res, 200, game.sell(user.id, Number((await body(req)).playerId)));
   }
   const ge = url.pathname.match(/^\/api\/games\/(\d+)\/events$/);

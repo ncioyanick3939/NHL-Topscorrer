@@ -631,29 +631,43 @@ function auctionsHtml(au) {
   return part('Meine Gebote', bids) + part('Angebote für meine Spieler', offers) + part('Letzte Ergebnisse', results);
 }
 
-/* ---------- lineup sheets ---------- */
-async function moveTo(playerId, line, bg) {
-  try { await api('/api/lineup', { body: { playerId, line } }); closeSheet(bg); render(); } catch (err) { toast(err.message); }
+/* ---------- lineup: change player (like Topscorers) ---------- */
+async function moveTo(body, bg) {
+  try { await api('/api/lineup', { body }); closeSheet(bg); render(); } catch (err) { toast(err.message); }
 }
-function slotSheet(id) {
-  const p = S.team?.players.find((x) => x.id === id);
-  if (!p) return;
-  const bg = openSheet(`<div class="shead">${avatar(p, true)}<div class="sname">${esc(p.first)} ${esc(p.last)}</div><div class="ptag">${POS[p.pos]} · ${esc(p.team)}</div></div>
-    <button class="btn sell wide" data-bench style="margin-top:18px">Auf die Bank</button>
-    <button class="btn buy wide" data-details style="margin-top:10px">Details</button>`);
+const LINE_NAME = (l) => (l === 9 ? 'Tor' : l > 0 ? `${l}. Linie` : 'Bank');
+/**
+ * One sheet for a lineup slot: the player in it on top, "Unbesetzt" to empty it, then every other player of the
+ * position. + puts a bench player in, ⇄ swaps with a player from another line.
+ */
+function changeSheet(pos, line, currentId) {
+  const all = (S.team?.players || []).filter((p) => p.pos === pos);
+  const cur = all.find((p) => p.id === currentId) ?? null;
+  const rank = (p) => (p.lineup > 0 ? 1 : 0); // bench first, then players in other lines
+  const slotLine = pos === 'G' ? 9 : line;
+  // everyone else of the position, except players already in this line (swapping inside a line changes nothing)
+  const others = all.filter((p) => p !== cur && p.lineup !== slotLine).sort((a, b) => rank(a) - rank(b) || b.points - a.points);
+  const row = (p, act) => {
+    const warn = p.injury || p.missedLast ? '<i class="cw" title="Achtung">!</i>' : '';
+    const where = p.lineup > 0 ? `<em>${LINE_NAME(p.lineup)}</em>` : '';
+    const btn = act === 'cur' ? '' : `<button class="cbtn${act === 'swap' ? ' swap' : ''}" data-chg="${p.id}" ${p.locked || cur?.locked ? 'disabled' : ''} aria-label="${act === 'swap' ? 'Tauschen' : 'Einsetzen'}">${act === 'swap' ? '⇄' : '+'}</button>`;
+    return `<div class="crow${act === 'cur' ? ' cur' : ''}${act === 'swap' ? ' dim' : ''}" data-open="${p.id}">
+      <div class="cav">${warn}${avatar(p)}</div>
+      <div class="cmain"><small>${p.number != null ? '#' + p.number + ' ' : ''}${POS[p.pos]}${where}</small><b>${esc(p.last)}</b>${p.locked ? '<span class="lock">Gesperrt</span>' : ''}</div>
+      ${logo(p.team)}<div class="cpts"><b class="${p.points < 0 ? 'down' : ''}">${fmt(p.points)}</b><small>Punkte</small></div>${btn}</div>`;
+  };
+  const empty = `<div class="crow unset${cur ? '' : ' cur'}" ${cur ? 'data-unset' : ''} role="button"><div class="cav"><span class="cminus">−50 Pkt.</span></div>
+    <div class="cmain"><b>Unbesetzt</b>${cur ? '<small>Tippen, um die Position zu leeren</small>' : ''}</div></div>`;
+  const bg = openSheet(`<h1 class="rt ctitle">Spieler wechseln</h1><div class="csub">${POS[pos]} · ${LINE_NAME(pos === 'G' ? 9 : line)}</div>
+    <div class="clist">${cur ? row(cur, 'cur') : ''}${empty}
+    ${others.map((p) => row(p, p.lineup > 0 ? 'swap' : 'add')).join('') || '<div class="empty">Keine weiteren Spieler auf dieser Position. Hole einen im Transfermarkt.</div>'}</div>`);
+  bg.querySelector('.sheet').classList.add('chg');
   bg.addEventListener('click', (e) => {
-    if (e.target.closest('[data-bench]')) moveTo(id, 0, bg);
-    if (e.target.closest('[data-details]')) { closeSheet(bg); openPlayer(id); }
-  });
-}
-function addSheet(pos, line) {
-  const bench = (S.team?.players || []).filter((p) => p.pos === pos && p.lineup === 0);
-  const bg = openSheet(`<h1 class="rt">${{ F: 'Stürmer', D: 'Verteidiger', G: 'Torhüter' }[pos]} einsetzen</h1>
-    ${bench.length ? bench.map((p) => prow(p, { btn: `<button class="plus" data-put="${p.id}">+</button>` })).join('') : '<div class="empty">Kein Spieler auf der Bank. Hole einen im Markt oder setze einen anderen Spieler auf die Bank.</div>'}`);
-  bg.addEventListener('click', (e) => {
-    const b = e.target.closest('[data-put]');
-    if (b) { e.stopPropagation(); moveTo(Number(b.dataset.put), pos === 'G' ? 9 : line, bg); }
-    else if (e.target.closest('[data-open]')) { closeSheet(bg); openPlayer(e.target.closest('[data-open]').dataset.open); }
+    const b = e.target.closest('[data-chg]');
+    if (b) { e.stopPropagation(); return moveTo({ playerId: Number(b.dataset.chg), line: slotLine, ...(cur ? { replaceId: cur.id } : {}) }, bg); }
+    if (e.target.closest('[data-unset]')) { if (cur.locked) return toast('Gesperrt: Das Team spielt heute.'); return moveTo({ playerId: cur.id, line: 0 }, bg); }
+    const op = e.target.closest('[data-open]');
+    if (op) { closeSheet(bg); openPlayer(op.dataset.open); }
   });
 }
 
@@ -783,9 +797,9 @@ document.addEventListener('click', async (e) => {
   const line = t.closest('[data-line]');
   if (line) { S.line = Number(line.dataset.line); return render(); }
   const slot = t.closest('[data-slot]');
-  if (slot) return slotSheet(Number(slot.dataset.slot));
+  if (slot) { const p = S.team?.players.find((x) => x.id === Number(slot.dataset.slot)); if (p) return changeSheet(p.pos, p.lineup, p.id); return; }
   const add = t.closest('[data-add]');
-  if (add) { const [pos, ln] = add.dataset.add.split(':'); return addSheet(pos, Number(ln)); }
+  if (add) { const [pos, ln] = add.dataset.add.split(':'); return changeSheet(pos, Number(ln), null); }
   const lsub = t.closest('[data-lsub]');
   if (lsub) { S.liveSeg = lsub.dataset.lsub; return render(); }
   if (t.closest('[data-settings]')) return openSettings();
