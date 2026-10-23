@@ -77,7 +77,7 @@ Das Skript läuft genauso auf Oracle Cloud „Always Free“ (Ubuntu) oder einem
 | Markt | 48 Angebote. Jede Stunde verschwindet eines, und ein neues kommt. Jeder Spieler bleibt 48 Stunden |
 | Kaufen | nur Spieler auf dem Markt, zum aktuellen Preis |
 | Verkaufen | jederzeit, zum aktuellen Preis |
-| Sperre | Spieler, deren Team heute spielt oder gespielt hat, sind bis zum Tagesabschluss gesperrt |
+| Sperre | Transfermarkt: keine, jederzeit bieten, kaufen, verkaufen (einschaltbar mit `marketLock` in `config.js`). Aufstellung: Spieler, deren Team heute spielt oder gespielt hat, bleiben bis zum Tagesabschluss wo sie sind |
 | Preisänderung | einmal pro Tag, nach den Tagespunkten |
 | Maximale Änderung | ±15 % pro Tag |
 

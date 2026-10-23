@@ -76,8 +76,13 @@ test('live points, trade lock, and next-day price move from real-format data', a
   const live = game.liveView(uid);
   assert.equal(live.mine[0].pts, 60 + 3 * 5 + 5 + 5 + 19); // goal + 3 shots + plus/minus + lineup + 19 minutes on ice
   assert.equal(db.prepare('SELECT price FROM players WHERE id=8480002').get().price, 1_000_000);
+  const { RULES } = await import('./config.js');
+  RULES.marketLock = true; // the old rule, switched on in config.js
   assert.throws(() => game.sell(uid, 8480002), /Gesperrt/);
   assert.throws(() => game.buy(uid, 8480010), /Gesperrt/);
+  RULES.marketLock = false; // default: the market stays open, only the lineup is fixed
+  assert.equal(game.myTeam(uid).players.find((x) => x.id === 8480002).tradeLocked, false);
+  assert.throws(() => game.setLineup(uid, 8480002, 0), /Gesperrt/);
 
   // Game ends. Before the next morning nothing is booked.
   nhl.applyBoxscore(g, nhl.parseBoxscore(box('FINAL', 1)));
