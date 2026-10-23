@@ -625,13 +625,7 @@ main.static>*{animation:none}
 .tsn{color:var(--yellow);font-family:var(--f-display);margin-right:2px}
 .link.more{display:block;margin:2px auto 0}
 
-/* league: awards, rank change, curve */
-.awards{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:16px 0 0}
-.aw{border-radius:var(--r);padding:10px 8px;text-align:center;min-width:0;background:linear-gradient(180deg,var(--surface-2),var(--surface));border:1px solid var(--line)}
-.aw.me{border-color:rgba(255,196,0,.55)}
-.aw span{display:block;font:600 9px var(--f-body);letter-spacing:.1em;text-transform:uppercase;color:var(--mute);white-space:nowrap}
-.aw b{display:block;font:700 18px var(--f-display);margin:4px 0 1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.aw small{font-size:11px;color:var(--yellow)}
+/* league: rank change, curve */
 .rch{font-style:normal;font:700 11px var(--f-body);margin-left:6px;vertical-align:2px}
 .chart.curve svg{height:auto}
 .legend{display:grid;gap:6px;margin-top:4px}

@@ -464,7 +464,7 @@ const views = {
     }
     const [rows, hist] = await Promise.all([api('/api/league'), api('/api/league/history').catch(() => null)]);
     const delta = (id) => { const c = hist?.change?.[id] ?? 0; return c > 0 ? `<i class="rch up">▲${c}</i>` : c < 0 ? `<i class="rch down">▼${-c}</i>` : ''; };
-    return `${head}${awardsHtml(hist)}<div class="rhead"><span>Teamwert</span><span>Punkte</span></div>
+    return `${head}<div class="rhead"><span>Teamwert</span><span>Punkte</span></div>
       ${rows.map((r, i) => `<div class="rank${r.me ? ' me' : ''}${medal(i)}" data-manager="${r.id}" role="button" tabindex="0"><div class="n">${i + 1}.</div><div class="grow"><div class="rname">${esc(r.name)}${delta(r.id)}</div></div><div class="rv">${fmt(r.value)}</div><div class="rp">${fmt(r.points)}${r.live ? `<small>+${r.live} heute</small>` : ''}</div></div>`).join('')}`;
   },
 
@@ -526,14 +526,6 @@ const views = {
 
 let renderId = 0;
 const htmlCache = new Map();
-/** Winner of the last day and of the last 7 days, biggest climber. */
-function awardsHtml(h) {
-  const a = h?.awards;
-  if (!a) return '';
-  const day = (iso) => { const [, m, d] = String(iso).split('-'); return `${d}.${m}.`; };
-  const tile = (icon, label, x, val) => `<div class="aw${x?.me ? ' me' : ''}"><span>${icon} ${label}</span><b>${x ? esc(x.name) : '–'}</b><small>${x ? val : 'noch offen'}</small></div>`;
-  return `<div class="awards">${tile('🏆', `Tag ${a.day ? day(a.day.on) : ''}`, a.day, a.day && `+${fmt(a.day.v)} Pkt.`)}${tile('📅', '7 Tage', a.week, a.week && `${fmt(a.week.v)} Pkt.`)}${tile('🚀', 'Aufsteiger', a.climber, a.climber && `▲ ${a.climber.v} ${a.climber.v === 1 ? 'Platz' : 'Plätze'}`)}</div>`;
-}
 const CURVE_COLORS = ['#3d7bff', '#e5384f', '#3fd68a', '#b47cff', '#ff8a3d', '#4fd1e8', '#f472b6', '#a3e635'];
 /** Season curve: cumulative points of every manager per closed day. */
 function curveHtml(h) {

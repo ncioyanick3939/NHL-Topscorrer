@@ -352,8 +352,8 @@ export function league(userId) {
 }
 
 /**
- * How the league developed, from the booked points per day: cumulative points per manager, rank change since the
- * day before, and awards (winner of the last day, of the last 7 days, biggest climber over 7 days).
+ * How the league developed, from the booked points per day: cumulative points per manager and the rank change
+ * since the day before.
  * Only closed days count, so the numbers stay the same after a reload.
  */
 export function leagueHistory(userId) {
@@ -368,21 +368,9 @@ export function leagueHistory(userId) {
   });
   const n = days.length;
   const rankAt = (i) => new Map([...series].sort((a, b) => (i < 0 ? 0 : b.cum[i] - a.cum[i]) || a.id - b.id).map((s, k) => [s.id, k + 1]));
-  const now = rankAt(n - 1), yesterday = rankAt(n - 2), weekAgo = rankAt(n - 8);
+  const now = rankAt(n - 1), yesterday = rankAt(n - 2);
   const change = Object.fromEntries(series.map((s) => [s.id, n >= 2 ? yesterday.get(s.id) - now.get(s.id) : 0]));
-  const best = (score) => {
-    const top = [...series].map((s) => ({ id: s.id, name: s.name, me: s.me, v: score(s) })).sort((a, b) => b.v - a.v || a.id - b.id)[0];
-    return top && top.v > 0 ? top : null;
-  };
-  const week = (s) => s.day.slice(-7).reduce((a, b) => a + b, 0);
-  return {
-    days, series, change,
-    awards: n ? {
-      day: best((s) => s.day[n - 1]) && { ...best((s) => s.day[n - 1]), on: days[n - 1] },
-      week: best(week),
-      climber: n >= 2 ? best((s) => weekAgo.get(s.id) - now.get(s.id)) : null,
-    } : null,
-  };
+  return { days, series, change };
 }
 
 export function liveView(userId) {
