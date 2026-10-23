@@ -1,7 +1,7 @@
 import dns from 'node:dns';
 import { autoFillAll } from './lineup.js';
 import { db, tx, getMeta, setMeta } from './db.js';
-import { NHL_API, NHL_TEAMS, PRICE, RULES, SCORING } from './config.js';
+import { NHL_API, NHL_STATS_API, NHL_TEAMS, PRICE, RULES, SCORING } from './config.js';
 import { statsToPoints, nextPrice, summarize, seasonPoints, resultPoints } from './scoring.js';
 import { rolloverReached } from './util.js';
 import { refreshMarket } from './market.js';
@@ -19,12 +19,12 @@ const HEADERS = {
 };
 
 /** NHL API call. Codespaces often time out on IPv6, so IPv4 goes first; failed calls are retried 3 times. */
-export async function fetchJson(path, attempts = 3, timeoutMs = 15_000) {
+export async function fetchJson(path, attempts = 3, timeoutMs = 15_000, base = NHL_API) {
   let lastErr;
   for (let k = 1; k <= attempts; k++) {
     let res;
     try {
-      res = await fetch(`${NHL_API}${path}`, { headers: HEADERS, redirect: 'follow', signal: AbortSignal.timeout(timeoutMs) });
+      res = await fetch(`${base}${path}`, { headers: HEADERS, redirect: 'follow', signal: AbortSignal.timeout(timeoutMs) });
     } catch (e) {
       const why = e.cause?.code || e.cause?.message || e.message;
       lastErr = new Error(`NHL API ${path}: ${why}`);
@@ -486,6 +486,36 @@ export function applySeasonStats(list) {
 }
 
 /** Real season statistics for all players from the NHL (current season, regular season). */
+/** NHL stats API rows -> Map playerId -> number, e.g. blocked shots from the 'realtime' report. */
+export function parseStatsRows(json, field) {
+  const out = new Map();
+  for (const r of json?.data ?? []) {
+    const v = Number(r[field]);
+    if (r.playerId != null && Number.isFinite(v)) out.set(r.playerId, v);
+  }
+  return out;
+}
+
+/**
+ * Season totals of blocked shots and faceoffs won from the NHL stats API (the season table of the web API has
+ * neither). Optional: if it fails, the player sheet counts them from the games the app followed.
+ */
+export async function syncExtraStats({ log = console.log } = {}) {
+  const { cur } = seasonStrings();
+  const q = `?limit=-1&cayenneExp=${encodeURIComponent(`seasonId=${cur} and gameTypeId=2`)}`;
+  const blocked = parseStatsRows(await fetchJson(`/skater/realtime${q}`, 2, 20_000, NHL_STATS_API), 'blockedShots');
+  const faceoffs = parseStatsRows(await fetchJson(`/skater/faceoffwins${q}`, 2, 20_000, NHL_STATS_API), 'totalFaceoffWins');
+  if (!blocked.size) throw new Error('Statistik-API: keine geblockten Schüsse erhalten');
+  tx(() => {
+    const upd = db.prepare('UPDATE players SET blocked = ?, fo_won = ? WHERE id = ?');
+    for (const [id, b] of blocked) upd.run(b, faceoffs.get(id) ?? 0, id);
+  });
+  setMeta('extra_stats_at', Date.now());
+  setMeta('extra_stats_faceoffs', faceoffs.size ? 1 : 0);
+  log(`Geblockte Schüsse und Bullys geladen: ${blocked.size} Spieler`);
+  return blocked.size;
+}
+
 export async function syncSeasonStats({ log = console.log } = {}) {
   const { cur } = seasonStrings();
   let n = 0;
@@ -724,6 +754,11 @@ export async function tick({ log = console.log } = {}) {
     const goalieGap = !!db.prepare("SELECT 1 FROM players WHERE pos = 'G' AND games > 0 AND saves = 0 AND goals_against = 0 LIMIT 1").get()
       && Date.now() - Number(getMeta('last_stats_sync') || 0) > 30 * 60_000; // new goalie columns: fill them soon, not in 3 hours
     if (done.length || goalieGap || Date.now() - Number(getMeta('last_stats_sync') || 0) > 3 * 3600 * 1000) await syncSeasonStats({ log });
+    const extraAt = Number(getMeta('extra_stats_at') || 0), extraTry = Number(getMeta('extra_stats_try') || 0);
+    if ((done.length || Date.now() - extraAt > 3 * 3600 * 1000) && Date.now() - extraTry > 30 * 60_000) {
+      setMeta('extra_stats_try', Date.now());
+      try { await syncExtraStats({ log }); } catch (e) { log(`Geblockte Schüsse/Bullys nicht geladen: ${e.message}`); }
+    }
     setMeta('last_update_ok', Date.now()); // shown in the app as "NHL-Daten von hh:mm"
   } catch (e) {
     log(`Update fehlgeschlagen: ${e.message}`);

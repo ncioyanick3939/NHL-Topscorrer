@@ -1,6 +1,6 @@
 import { autoFill, autoFillAll, slotFits, GOALIE_SLOT } from './lineup.js';
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
-import { db, tx } from './db.js';
+import { db, tx, getMeta } from './db.js';
 import { PRICE, RULES } from './config.js';
 import { LOCKED_SQL, logTransfer, cannotReceive, acceptOffer, dropBids } from './auction.js';
 import { nextPrice, pointsBreakdown } from './scoring.js';
@@ -202,9 +202,12 @@ export function playerDetail(userId, id) {
   const own = db.prepare('SELECT bought_for FROM roster WHERE user_id = ? AND player_id = ?').get(userId, id);
   const full = db.prepare('SELECT shots, blocked, pim, plus_minus, wins, saves, goals_against, shutouts FROM players WHERE id = ?').get(id);
   return { ...shape(p, ownedSet(userId)), myBid: myBids(userId).get(id) ?? null, ...full, plusMinus: full.plus_minus, goalsAgainst: full.goals_against, boughtFor: own?.bought_for ?? null, log, live, transfers,
-    ...(() => { // blocked shots and faceoffs are not in the NHL season table: counted from the games the app followed
+    ...(() => {
+      // blocked shots and faceoffs: season totals from the NHL stats API when it answered, else counted from followed games
       const t = trackedSeason(id);
-      return { seasonExact: Math.min(t.games, p.games), blocked: t.blocked, foWon: t.fo_won };
+      const season = !!getMeta('extra_stats_at');
+      const fo = season && getMeta('extra_stats_faceoffs') === '1';
+      return { seasonExact: Math.min(t.games, p.games), blocked: season ? p.blocked : t.blocked, foWon: fo ? p.fo_won : t.fo_won, extraSeason: season && fo };
     })(),
     histFull: db.prepare('SELECT day, price FROM price_history WHERE player_id = ? ORDER BY day ASC LIMIT 120').all(id) };
 }
