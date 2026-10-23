@@ -37,11 +37,17 @@ async function api(path, opts = {}) {
     if (apiFlight.has(path)) return apiFlight.get(path);
   } else apiCache.clear(); // any change invalidates everything
   const run = (async () => {
-    const res = await fetch(path, {
-      method: isGet ? 'GET' : 'POST',
-      headers: isGet ? {} : { 'Content-Type': 'application/json' },
-      body: isGet ? undefined : JSON.stringify(opts.body),
-    });
+    let res;
+    try {
+      res = await fetch(path, {
+        method: isGet ? 'GET' : 'POST',
+        headers: isGet ? {} : { 'Content-Type': 'application/json' },
+        body: isGet ? undefined : JSON.stringify(opts.body),
+        signal: AbortSignal.timeout(30_000), // never spin forever
+      });
+    } catch {
+      throw new Error('Der Server antwortet gerade nicht. Bitte in einer Minute neu laden.');
+    }
     const data = await res.json().catch(() => ({}));
     if (res.status === 401 && !opts.quiet) { showAuth(); throw new Error('login'); }
     if (!res.ok) throw new Error(data.error || 'Fehler');
