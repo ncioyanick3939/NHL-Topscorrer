@@ -278,14 +278,31 @@ export function sell(userId, playerId) {
 /* ---------- Team, league, live ---------- */
 
 /** Put a player into a line (1-3, goalie: 9) or on the bench (0). Locked players cannot be moved. */
-export function setLineup(userId, playerId, line) {
+/**
+ * Put a player into a line (0 = bench). With replaceId the player who holds that slot now changes places with him:
+ * he takes the other's old line, or goes to the bench. Both moves happen together.
+ */
+export function setLineup(userId, playerId, line, replaceId = null) {
   autoFill(userId);
   return tx(() => {
-    const p = db.prepare(`${SELECT_PLAYER} JOIN roster r ON r.player_id = p.id AND r.user_id = ? WHERE p.id = ?`).get(userId, playerId);
+    const get = (id) => db.prepare(`${SELECT_PLAYER} JOIN roster r ON r.player_id = p.id AND r.user_id = ? WHERE p.id = ?`).get(userId, id);
+    const lineOf = (id) => Math.max(0, db.prepare('SELECT lineup FROM roster WHERE user_id = ? AND player_id = ?').get(userId, id).lineup);
+    const locked = 'Gesperrt: Das Team spielt heute, die Aufstellung ist bis zum Tagesabschluss fix.';
+    const p = get(playerId);
     if (!p) throw new HttpError(404, 'Dieser Spieler gehört dir nicht.');
     const ok = line === 0 || (p.pos === 'G' ? line === GOALIE_SLOT : [1, 2, 3].includes(line));
     if (!ok) throw new HttpError(400, 'Ungültige Position.');
-    if (p.locked) throw new HttpError(409, 'Gesperrt: Das Team spielt heute, die Aufstellung ist bis zum Tagesabschluss fix.');
+    if (p.locked) throw new HttpError(409, locked);
+    if (replaceId) {
+      const q = get(replaceId);
+      if (!q) throw new HttpError(404, 'Dieser Spieler gehört dir nicht.');
+      if (q.pos !== p.pos) throw new HttpError(400, 'Tauschen geht nur auf derselben Position.');
+      if (q.locked) throw new HttpError(409, locked);
+      if (lineOf(replaceId) !== line) throw new HttpError(409, 'Die Aufstellung hat sich geändert. Bitte neu laden.');
+      db.prepare('UPDATE roster SET lineup = ? WHERE user_id = ? AND player_id = ?').run(lineOf(playerId), userId, replaceId);
+      db.prepare('UPDATE roster SET lineup = ? WHERE user_id = ? AND player_id = ?').run(line, userId, playerId);
+      return { ok: true };
+    }
     if (!slotFits(userId, p.pos, line, playerId)) throw new HttpError(409, 'Diese Linie ist auf der Position schon voll.');
     db.prepare('UPDATE roster SET lineup = ? WHERE user_id = ? AND player_id = ?').run(line, userId, playerId);
     return { ok: true };
