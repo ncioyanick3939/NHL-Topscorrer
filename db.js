@@ -172,6 +172,9 @@ function addColumn(table, name, ddl) {
 addColumn('players', 'injury_status', 'TEXT');   // 'out' | 'dtd' | NULL
 addColumn('players', 'injury_text', 'TEXT');
 addColumn('players', 'injury_return', 'TEXT');
+addColumn('players', 'saves', 'INTEGER NOT NULL DEFAULT 0');         // goalies, season totals from the NHL
+addColumn('players', 'goals_against', 'INTEGER NOT NULL DEFAULT 0');
+addColumn('players', 'shutouts', 'INTEGER NOT NULL DEFAULT 0');
 // Every player can belong to only one manager. Older databases may have duplicates: the first buyer keeps the player.
 db.exec(`DELETE FROM roster WHERE rowid NOT IN (SELECT MIN(rowid) FROM roster GROUP BY player_id)`);
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS roster_one_owner ON roster(player_id)');

@@ -254,7 +254,8 @@ export function parseGameLog(json, limit = 100, pos = 'F') {
       const shutout = (g.goalsAgainst ?? 0) === 0 && (g.shotsAgainst ?? 0) > 0 && toiSeconds(g.toi) >= 3540 ? 1 : 0;
       pts = statsToPoints({ pos: 'G', saves, goals_against: g.goalsAgainst ?? 0, win, shutout, dressed: 1, goals: g.goals, assists: g.assists,
         goalie_time: Math.floor(toiSeconds(g.toi) / 600) });
-      text = `${saves} Paraden, ${g.goalsAgainst ?? 0} Gegentore${win ? ', Sieg' : ''}`;
+      const sv = g.shotsAgainst ? ` · ${((saves / g.shotsAgainst) * 100).toFixed(1)} %` : '';
+      text = `${saves} Paraden, ${g.goalsAgainst ?? 0} Gegentore${win ? ', Sieg' : ''}${sv}`;
     } else {
       pts = statsToPoints({ pos, goals: g.goals, assists: g.assists, shots: g.shots, pim: g.pim, plus_minus: g.plusMinus, pp_goals: g.powerPlayGoals,
         sh_goals: g.shorthandedGoals, gwg: g.gameWinningGoals, toi_min: Math.floor(toiSeconds(g.toi) / 60), dressed: 1 });
@@ -442,13 +443,15 @@ export function trackedSeason(playerId, now = new Date()) {
  * view), the NHL-based estimate only for the share of games before that.
  */
 export function applySeasonStats(list) {
-  const upd = db.prepare(`UPDATE players SET games=?, goals=?, assists=?, plus_minus=?, shots=?, pim=?, wins=?, fantasy_pts=? WHERE id=?`);
+  const upd = db.prepare(`UPDATE players SET games=?, goals=?, assists=?, plus_minus=?, shots=?, pim=?, wins=?, fantasy_pts=?,
+    saves=?, goals_against=?, shutouts=? WHERE id=?`);
   tx(() => {
     for (const t of list) {
       const tracked = trackedSeason(t.id);
       const known = Math.min(tracked.games, t.games);
       const rest = t.games > 0 ? seasonPoints(t) * ((t.games - known) / t.games) : 0;
-      upd.run(t.games, t.goals, t.assists, t.plus_minus, t.shots, t.pim, t.wins, Math.round(tracked.pts + rest), t.id);
+      upd.run(t.games, t.goals, t.assists, t.plus_minus, t.shots, t.pim, t.wins, Math.round(tracked.pts + rest),
+        t.saves || 0, t.goals_against || 0, t.shutouts || 0, t.id);
     }
   });
   return list.length;

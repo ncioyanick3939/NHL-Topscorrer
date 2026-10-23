@@ -246,6 +246,10 @@ test('season stats come from the NHL table, not from days counted since the app 
   assert.equal(h.fantasy_pts, Math.round(tracked.pts + estimate * 7 / 8));
   const g = db.prepare('SELECT games, wins, fantasy_pts FROM players WHERE id=8480010').get();
   assert.deepEqual([g.games, g.wins], [6, 4]);
+  // goalie season totals are kept for the save percentage
+  const gs = db.prepare('SELECT saves, goals_against, shutouts FROM players WHERE id=8480010').get();
+  assert.deepEqual([gs.saves, gs.goals_against, gs.shutouts], [150, 12, 1]);
+  assert.equal(game.playerDetail(1, 8480010).savePct, 150 / 162);
   const gt = nhl.trackedSeason(8480010);
   assert.equal(g.fantasy_pts, Math.round(gt.pts + (150 * 4 - 12 * 15 + 4 * 15 + 40 + 6 * 5) * (6 - gt.games) / 6));
   // a later game day being finalized must not overwrite the NHL totals
@@ -275,7 +279,7 @@ test('game log: last games of a skater and a goalie in plain words', () => {
   assert.equal(rows[0].home, true);
   assert.equal(rows[1].home, false);
   assert.equal(rows[1].text, 'kein Punkt, -1, 1 Schüsse');
-  assert.equal(rows[2].text, '28 Paraden, 2 Gegentore, Sieg');
+  assert.equal(rows[2].text, '28 Paraden, 2 Gegentore, Sieg · 93.3 %'); // 28 of 30 shots
   assert.equal(rows[2].pts, 28 * 4 - 2 * 15 + 5 + 6); // + goalie time bonus for 60 minutes
 });
 

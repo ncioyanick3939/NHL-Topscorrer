@@ -134,6 +134,7 @@ function shape(p, owned) {
     id: p.id, team: p.team, first: p.first, last: p.last, pos: p.pos, number: p.number, headshot: p.headshot,
     price: p.price, prev: p.prev_price, hist: hist.length ? hist : [p.price],
     games: p.games, goals: p.goals, assists: p.assists, points: p.fantasy_pts,
+    savePct: p.pos === 'G' && p.saves + p.goals_against > 0 ? p.saves / (p.saves + p.goals_against) : null, // goalies
     todayPts: live, tomorrow: live ? nextPrice(p.price, live) : p.price,
     locked: !!p.locked, tradeLocked: RULES.marketLock && !!p.locked, owned: owned.has(p.id), // locked: lineup fixed; tradeLocked: no market
     injury: p.injury_status ? { status: p.injury_status, text: p.injury_text, returnDate: p.injury_return } : null,
@@ -199,8 +200,8 @@ export function playerDetail(userId, id) {
     WHERE t.player_id = ? ORDER BY t.id DESC LIMIT 8`).all(id);
   const live = breakdownOf(db.prepare(`SELECT * FROM day_stats WHERE player_id = ? AND day NOT IN (SELECT day FROM days)`).get(id), p.pos);
   const own = db.prepare('SELECT bought_for FROM roster WHERE user_id = ? AND player_id = ?').get(userId, id);
-  const full = db.prepare('SELECT shots, blocked, pim, plus_minus, wins FROM players WHERE id = ?').get(id);
-  return { ...shape(p, ownedSet(userId)), myBid: myBids(userId).get(id) ?? null, ...full, plusMinus: full.plus_minus, boughtFor: own?.bought_for ?? null, log, live, transfers,
+  const full = db.prepare('SELECT shots, blocked, pim, plus_minus, wins, saves, goals_against, shutouts FROM players WHERE id = ?').get(id);
+  return { ...shape(p, ownedSet(userId)), myBid: myBids(userId).get(id) ?? null, ...full, plusMinus: full.plus_minus, goalsAgainst: full.goals_against, boughtFor: own?.bought_for ?? null, log, live, transfers,
     seasonExact: Math.min(trackedSeason(id).games, p.games),
     histFull: db.prepare('SELECT day, price FROM price_history WHERE player_id = ? ORDER BY day ASC LIMIT 120').all(id) };
 }

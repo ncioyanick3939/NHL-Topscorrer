@@ -625,3 +625,5 @@ main.static>*{animation:none}
 .lg i{width:14px;height:4px;border-radius:2px;flex:none}
 .lg span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .lg b{font:700 17px var(--f-display);font-variant-numeric:tabular-nums}
+.grid4 .hi b{color:var(--yellow)}
+.pnums .pair{display:inline-flex;align-items:baseline;gap:4px;white-space:nowrap}
