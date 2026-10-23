@@ -108,6 +108,7 @@ async function api(req, res, url) {
       return send(res, 200, game.listPlayers(user.id, { pos: q.get('pos'), q: q.get('q'), sort: q.get('sort'), limit: q.get('limit') }));
     case 'GET /api/team': return send(res, 200, game.myTeam(user.id));
     case 'GET /api/league': return send(res, 200, game.league(user.id));
+    case 'GET /api/league/history': return send(res, 200, game.leagueHistory(user.id));
     case 'GET /api/live': return send(res, 200, game.liveView(user.id));
     case 'GET /api/rules': return send(res, 200, { SCORING, PRICE, RULES });
     case 'GET /api/games': return send(res, 200, game.allGames());

@@ -351,6 +351,40 @@ export function league(userId) {
     .sort((a, b) => b.points - a.points || b.wealth - a.wealth);
 }
 
+/**
+ * How the league developed, from the booked points per day: cumulative points per manager, rank change since the
+ * day before, and awards (winner of the last day, of the last 7 days, biggest climber over 7 days).
+ * Only closed days count, so the numbers stay the same after a reload.
+ */
+export function leagueHistory(userId) {
+  const users = db.prepare('SELECT id, name FROM users ORDER BY id').all();
+  const days = db.prepare('SELECT DISTINCT day FROM user_day_points ORDER BY day').all().map((r) => r.day);
+  const by = new Map(users.map((u) => [u.id, new Map()]));
+  for (const r of db.prepare('SELECT user_id, day, pts FROM user_day_points').all()) by.get(r.user_id)?.set(r.day, r.pts);
+  const series = users.map((u) => {
+    let sum = 0;
+    const day = days.map((d) => by.get(u.id).get(d) ?? 0);
+    return { id: u.id, name: u.name, me: u.id === userId, day, cum: day.map((p) => (sum += p)) };
+  });
+  const n = days.length;
+  const rankAt = (i) => new Map([...series].sort((a, b) => (i < 0 ? 0 : b.cum[i] - a.cum[i]) || a.id - b.id).map((s, k) => [s.id, k + 1]));
+  const now = rankAt(n - 1), yesterday = rankAt(n - 2), weekAgo = rankAt(n - 8);
+  const change = Object.fromEntries(series.map((s) => [s.id, n >= 2 ? yesterday.get(s.id) - now.get(s.id) : 0]));
+  const best = (score) => {
+    const top = [...series].map((s) => ({ id: s.id, name: s.name, me: s.me, v: score(s) })).sort((a, b) => b.v - a.v || a.id - b.id)[0];
+    return top && top.v > 0 ? top : null;
+  };
+  const week = (s) => s.day.slice(-7).reduce((a, b) => a + b, 0);
+  return {
+    days, series, change,
+    awards: n ? {
+      day: best((s) => s.day[n - 1]) && { ...best((s) => s.day[n - 1]), on: days[n - 1] },
+      week: best(week),
+      climber: n >= 2 ? best((s) => weekAgo.get(s.id) - now.get(s.id)) : null,
+    } : null,
+  };
+}
+
 export function liveView(userId) {
   autoFill(userId);
   const inLineup = new Set(db.prepare('SELECT player_id FROM roster WHERE user_id = ? AND lineup > 0').all(userId).map((r) => r.player_id));

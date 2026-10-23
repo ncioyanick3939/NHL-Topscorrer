@@ -553,3 +553,24 @@ test('points breakdown: lines add up to the total and are kept for the player sh
   assert.equal(live.breakdown.reduce((a, r) => a + r.pts, 0), live.pts);
   assert.ok(live.breakdown.some((r) => r.label === 'Eiszeit (Minuten)' && r.n === 12));
 });
+
+test('league history: cumulative points, rank change, day and week winners, climber', async () => {
+  const { db } = await import('./db.js');
+  const game = await import('./game.js');
+  db.prepare("INSERT INTO users (name, salt, pw_hash, balance) VALUES ('hist_a','s','x',0), ('hist_b','s','x',0)").run();
+  const a = db.prepare("SELECT id FROM users WHERE name='hist_a'").get().id;
+  const b = db.prepare("SELECT id FROM users WHERE name='hist_b'").get().id;
+  const add = db.prepare('INSERT INTO user_day_points (user_id, day, pts) VALUES (?,?,?)');
+  add.run(a, '2097-01-01', 100); add.run(b, '2097-01-01', 50);
+  add.run(a, '2097-01-02', 10); add.run(b, '2097-01-02', 200); // b overtakes a on the last day
+  const h = game.leagueHistory(a);
+  const sa = h.series.find((s) => s.id === a), sb = h.series.find((s) => s.id === b);
+  assert.deepEqual(sa.cum.slice(-2), [100 + (sa.cum.at(-3) ?? 0), 110 + (sa.cum.at(-3) ?? 0)]);
+  assert.ok(sa.me && !sb.me);
+  assert.ok(h.change[b] > 0 && h.change[a] < 0); // b climbed, a fell
+  assert.equal(h.awards.day.id, b);
+  assert.equal(h.awards.day.v, 200);
+  assert.equal(h.awards.day.on, '2097-01-02');
+  // stable after a reload: the same request gives the same answer
+  assert.deepEqual(game.leagueHistory(a), h);
+});
