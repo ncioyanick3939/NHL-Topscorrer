@@ -527,11 +527,11 @@ export async function syncSchedule() {
 }
 
 const upsertDayStat = db.prepare(`
-  INSERT INTO day_stats (player_id, day, game_id, goals, assists, shots, blocked, pim, plus_minus, saves, goals_against, win, shutout, pts)
-  VALUES (@id, @day, @gameId, @goals, @assists, @shots, @blocked, @pim, @plus_minus, @saves, @goals_against, @win, @shutout, @pts)
+  INSERT INTO day_stats (player_id, day, game_id, goals, assists, shots, blocked, pim, plus_minus, saves, goals_against, win, shutout, pts, detail)
+  VALUES (@id, @day, @gameId, @goals, @assists, @shots, @blocked, @pim, @plus_minus, @saves, @goals_against, @win, @shutout, @pts, @detail)
   ON CONFLICT(player_id, day) DO UPDATE SET game_id=excluded.game_id, goals=excluded.goals, assists=excluded.assists,
     shots=excluded.shots, blocked=excluded.blocked, pim=excluded.pim, plus_minus=excluded.plus_minus, saves=excluded.saves,
-    goals_against=excluded.goals_against, win=excluded.win, shutout=excluded.shutout, pts=excluded.pts
+    goals_against=excluded.goals_against, win=excluded.win, shutout=excluded.shutout, pts=excluded.pts, detail=excluded.detail
 `);
 
 /** Store the boxscore of one game as live day stats. Safe to call again and again. */
@@ -549,7 +549,7 @@ export function applyBoxscore(game, box) {
       upsertDayStat.run({
         id: p.id, day: game.day, gameId: game.id, goals: p.goals, assists: p.assists, shots: p.shots, blocked: p.blocked,
         pim: p.pim, plus_minus: p.plus_minus, saves: p.saves, goals_against: p.goals_against, win: p.win, shutout: p.shutout,
-        pts: statsToPoints(p),
+        pts: statsToPoints(p), detail: JSON.stringify(p),
       });
     }
   });

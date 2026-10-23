@@ -505,3 +505,26 @@ main.static>*{animation:none}
   .hero .big{font-size:64px}
   nav.bar{padding-bottom:calc(16px + env(safe-area-inset-bottom,0px))}
 }
+
+/* live: total points of today */
+.livehero{position:relative;overflow:hidden;text-align:center;border-radius:var(--r-xl);padding:18px 16px 16px;margin:16px 0 4px;
+  background:linear-gradient(160deg,#283f74,#182a52);border:1px solid rgba(255,255,255,.1);box-shadow:var(--shadow)}
+.livehero.on{background:linear-gradient(160deg,#4a1f3a,#22203f 55%,#182a52);border-color:rgba(229,56,79,.4)}
+.livehero .lbl{display:flex;align-items:center;justify-content:center;gap:8px;font:700 11px var(--f-body);letter-spacing:.16em;text-transform:uppercase;color:#c7d0e4}
+.livehero .lbl i{width:9px;height:9px;border-radius:50%;background:var(--red);animation:pulse 1.6s infinite}
+.livehero .big{font:700 76px/1 var(--f-display);color:var(--yellow);margin:8px 0 6px;font-variant-numeric:tabular-nums;text-shadow:0 0 30px rgba(255,196,0,.3)}
+.livehero .big.down{color:var(--down);text-shadow:none}
+.livehero .sub{font-size:13px;color:var(--ink-2)}.livehero .sub b{color:#fff}
+
+/* player sheet: how the points came about */
+.calc{background:linear-gradient(180deg,var(--surface-2),var(--surface));border:1px solid rgba(255,196,0,.35);border-radius:var(--r);padding:14px;margin:14px 0;text-align:left}
+.calch,.calcf{display:flex;justify-content:space-between;align-items:baseline}
+.calch span{font:700 13px var(--f-display);letter-spacing:.14em;text-transform:uppercase;color:var(--mute)}
+.calch b{font:700 30px var(--f-display);font-variant-numeric:tabular-nums}
+.calc ul{list-style:none;margin:8px 0 0;padding:0}
+.calc li{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-top:1px solid var(--line);font-size:14px}
+.calc li i{font-style:normal;color:var(--mute);display:inline-block;min-width:30px;font-variant-numeric:tabular-nums}
+.calc li b{font:700 17px var(--f-display);font-variant-numeric:tabular-nums}
+.calcf{border-top:2px solid var(--line-2);margin-top:2px;padding-top:9px}
+.calcf span{font-weight:700}.calcf b{font:700 20px var(--f-display);color:var(--yellow)}
+.calc small{display:block;margin-top:10px;color:var(--mute);font-size:12px}.calc small b{color:var(--ink)}

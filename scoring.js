@@ -16,31 +16,49 @@ export function resultPoints(result) {
   return { W: c.win, OTW: c.winOT, L: c.loss, OTL: c.lossOT, SOL: c.lossSO }[result] ?? 0;
 }
 
-/** Fantasy points from one player's stats of one game (Topscorers rules). Pure function. */
-export function statsToPoints(s) {
+const RESULT_LABEL = { W: 'Sieg', OTW: 'Sieg n.V./Penaltys', L: 'Niederlage', OTL: 'Niederlage n.V.', SOL: 'Niederlage Penaltyschiessen' };
+
+/**
+ * How the points of one player in one game come about, line by line: [{ label, n, pts }].
+ * n = how often (null for one-off bonuses). statsToPoints is the sum of these lines, so both always match.
+ */
+export function pointsBreakdown(s) {
   const c = SCORING;
   const pos = s.pos === 'D' || s.pos === 'G' ? s.pos : 'F';
-  let pts =
-    (s.goals || 0) * c.goal[pos] +
-    (s.assists || 0) * c.assist[pos] +
-    (s.pp_goals || 0) * c.powerplayGoal +
-    ((s.goals || 0) >= 3 ? c.hattrick : 0) +
-    (s.shots || 0) * c.shot +
-    (s.blocked || 0) * c.blocked +
-    (s.plus_minus || 0) * c.plusMinus +
-    (s.saves || 0) * c.save +
-    (s.goals_against || 0) * c.goalAgainst +
-    (s.shutout ? c.shutout : 0) +
-    (s.zero_against && (pos === 'G' || pos === 'D') ? c.zeroAgainst : 0) +
-    (s.dressed ? c.lineup : 0) +
-    (s.sh_goals || 0) * c.shGoal + (s.sh_assists || 0) * c.shAssist + (s.pp_assists || 0) * c.ppAssist +
-    (s.gwg || 0) * c.gwg + (s.pwg || 0) * c.pwg +
-    (s.fo_won || 0) * c.faceoffWon + (s.fo_lost || 0) * c.faceoffLost +
-    (s.missed || 0) * c.missedShot +
-    (s.toi_min || 0) * c.timeOnIce + (s.goalie_time || 0) * c.goalieTime +
-    (s.pen_pts != null ? s.pen_pts : penaltyPoints(s.pim)) +
-    resultPoints(s.result);
-  return Math.round(pts);
+  const rows = [];
+  const add = (label, n, per) => { if (n && per) rows.push({ label, n, pts: n * per }); };
+  const once = (label, on, pts) => { if (on && pts) rows.push({ label, n: null, pts }); };
+  add('Tor', s.goals, c.goal[pos]);
+  add('Assist', s.assists, c.assist[pos]);
+  add('Powerplay-Tor (Bonus)', s.pp_goals, c.powerplayGoal);
+  add('Unterzahl-Tor (Bonus)', s.sh_goals, c.shGoal);
+  once('Hattrick', (s.goals || 0) >= 3, c.hattrick);
+  add('Powerplay-Assist (Bonus)', s.pp_assists, c.ppAssist);
+  add('Unterzahl-Assist (Bonus)', s.sh_assists, c.shAssist);
+  add('Siegtor', s.gwg, c.gwg);
+  add('Siegtor Penaltyschiessen', s.pwg, c.pwg);
+  add('Schuss aufs Tor', s.shots, c.shot);
+  add('Fehlschuss/Pfosten', s.missed, c.missedShot);
+  add('Geblockter Schuss', s.blocked, c.blocked);
+  add('Plus/Minus', s.plus_minus, c.plusMinus);
+  add('Bully gewonnen', s.fo_won, c.faceoffWon);
+  add('Bully verloren', s.fo_lost, c.faceoffLost);
+  add('Parade', s.saves, c.save);
+  add('Gegentor', s.goals_against, c.goalAgainst);
+  once('Shutout', s.shutout, c.shutout);
+  once('Zero Against', s.zero_against && (pos === 'G' || pos === 'D'), c.zeroAgainst);
+  once('Im Spiel dabei', s.dressed, c.lineup);
+  add('Eiszeit (Minuten)', s.toi_min, c.timeOnIce);
+  add('Torhüter-Zeitbonus (pro 10 Min.)', s.goalie_time, c.goalieTime);
+  const pen = s.pen_pts != null ? s.pen_pts : penaltyPoints(s.pim);
+  if (pen) rows.push({ label: 'Strafen', n: s.pim || null, pts: pen });
+  once(RESULT_LABEL[s.result] ?? '', s.result, resultPoints(s.result));
+  return rows;
+}
+
+/** Fantasy points from one player's stats of one game (Topscorers rules). Pure function. */
+export function statsToPoints(s) {
+  return Math.round(pointsBreakdown(s).reduce((sum, r) => sum + r.pts, 0));
 }
 
 /** New price from the points of one finalized day. Pure function. */

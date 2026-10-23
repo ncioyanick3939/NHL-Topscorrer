@@ -3,7 +3,7 @@ import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { db, tx } from './db.js';
 import { PRICE, RULES } from './config.js';
 import { LOCKED_SQL, logTransfer, cannotReceive, acceptOffer, dropBids } from './auction.js';
-import { nextPrice } from './scoring.js';
+import { nextPrice, pointsBreakdown } from './scoring.js';
 import { refreshMarket } from './market.js';
 
 export class HttpError extends Error {
@@ -196,11 +196,25 @@ export function playerDetail(userId, id) {
   const log = db.prepare('SELECT day, price, pts, summary FROM price_history WHERE player_id = ? ORDER BY day DESC LIMIT 10').all(id);
   const transfers = db.prepare(`SELECT t.kind, t.price, t.at, u.name AS user FROM transfers t JOIN users u ON u.id = t.user_id
     WHERE t.player_id = ? ORDER BY t.id DESC LIMIT 8`).all(id);
-  const live = db.prepare(`SELECT * FROM day_stats WHERE player_id = ? AND day NOT IN (SELECT day FROM days)`).get(id) ?? null;
+  const live = breakdownOf(db.prepare(`SELECT * FROM day_stats WHERE player_id = ? AND day NOT IN (SELECT day FROM days)`).get(id), p.pos);
   const own = db.prepare('SELECT bought_for FROM roster WHERE user_id = ? AND player_id = ?').get(userId, id);
   const full = db.prepare('SELECT shots, blocked, pim, plus_minus, wins FROM players WHERE id = ?').get(id);
   return { ...shape(p, ownedSet(userId)), myBid: myBids(userId).get(id) ?? null, ...full, plusMinus: full.plus_minus, boughtFor: own?.bought_for ?? null, log, live, transfers,
     histFull: db.prepare('SELECT day, price FROM price_history WHERE player_id = ? ORDER BY day ASC LIMIT 120').all(id) };
+}
+
+/** Live stats of a day with the points line by line. Rows stored before the full stats were kept get a rest line. */
+function breakdownOf(row, pos) {
+  if (!row) return null;
+  const { detail, ...stats } = row;
+  let lines;
+  try { lines = detail ? pointsBreakdown(JSON.parse(detail)) : null; } catch { lines = null; }
+  if (!lines) {
+    lines = pointsBreakdown({ ...stats, pos });
+    const rest = row.pts - lines.reduce((s, r) => s + r.pts, 0);
+    if (rest) lines.push({ label: 'Weitere (Eiszeit, Bullys, Resultat …)', n: null, pts: rest });
+  }
+  return { ...stats, breakdown: lines };
 }
 
 /** League ticker: the latest buys and sells of all managers. */

@@ -492,3 +492,26 @@ test('play-by-play extras: shorthanded goal, PP/SH assists, winning goal, faceof
   assert.equal(statsToPoints({ pos: 'F', toi_min: 18, dressed: 1 }), 18 + 5);
   assert.equal(statsToPoints({ pos: 'G', goalie_time: 6, dressed: 1 }), 6 + 5);
 });
+
+test('points breakdown: lines add up to the total and are kept for the player sheet', async () => {
+  const { pointsBreakdown } = await import('./scoring.js');
+  const s = { pos: 'F', goals: 3, assists: 1, pp_goals: 1, shots: 5, missed: 2, blocked: 1, plus_minus: 2, fo_won: 4, fo_lost: 3,
+    dressed: 1, toi_min: 18, pim: 2, gwg: 1, result: 'OTW' };
+  const lines = pointsBreakdown(s);
+  assert.equal(lines.reduce((a, r) => a + r.pts, 0), statsToPoints(s));
+  assert.deepEqual(lines.find((r) => r.label === 'Tor'), { label: 'Tor', n: 3, pts: 180 });
+  assert.ok(lines.some((r) => r.label === 'Hattrick'));
+  assert.ok(lines.some((r) => r.label === 'Sieg n.V./Penaltys'));
+  const g = { pos: 'G', saves: 30, goals_against: 0, shutout: 1, zero_against: 1, dressed: 1, result: 'W', goalie_time: 6 };
+  assert.equal(pointsBreakdown(g).reduce((a, r) => a + r.pts, 0), statsToPoints(g));
+
+  db.prepare(`INSERT OR IGNORE INTO players (id, team, first, last, pos, price, prev_price) VALUES (8490001,'BOS','Brad','Test','F',500000,500000)`).run();
+  db.prepare(`INSERT INTO games (id, day, state, home, away, start_utc) VALUES (77,'2098-05-05','LIVE','BOS','TOR', ?)`).run(new Date().toISOString());
+  nhl.applyBoxscore({ id: 77, day: '2098-05-05', state: 'LIVE' }, { state: 'LIVE', homeScore: 1, awayScore: 0,
+    players: [{ id: 8490001, team: 'BOS', pos: 'F', goals: 1, assists: 0, shots: 2, blocked: 0, pim: 0, plus_minus: 1, saves: 0,
+      goals_against: 0, win: 0, shutout: 0, dressed: 1, toi_min: 12, fo_won: 3 }] });
+  const uid = game.register('Leser', 'passwort123', 'testcode', 'testcode');
+  const live = game.playerDetail(uid, 8490001).live;
+  assert.equal(live.breakdown.reduce((a, r) => a + r.pts, 0), live.pts);
+  assert.ok(live.breakdown.some((r) => r.label === 'Eiszeit (Minuten)' && r.n === 12));
+});

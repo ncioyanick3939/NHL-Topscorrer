@@ -159,7 +159,11 @@ async function openPlayer(id) {
       ? '<div class="chart"><b>Im letzten Spiel nicht dabei</b><div style="color:var(--mute);font-size:13px;margin-top:4px">Dieser Spieler stand im letzten Spiel seines Teams nicht im Einsatz (verletzt, überzählig oder abwesend). Der Grund ist nicht bekannt.</div></div>'
       : '';
   const lockInfo = d.locked ? '<p class="note" style="margin:8px 0 0">Gesperrt: Das Team spielt heute oder der Tag ist noch nicht abgeschlossen. Am nächsten Morgen ist der neue Preis da.</p>' : '';
-  const live = d.live ? `<div class="chart"><b>Heute live: ${d.live.pts} Punkte</b><div style="color:var(--mute);font-size:13px;margin-top:4px">${d.live.goals} Tore, ${d.live.assists} Assists, ${d.live.shots} Schüsse. Voraussichtlicher Preis morgen: <b>${fmt(d.tomorrow)}</b></div></div>` : '';
+  const sgn = (n) => (n > 0 ? '+' : n < 0 ? '−' : '') + fmt(Math.abs(n));
+  const live = d.live ? `<div class="calc"><div class="calch"><span>Heute live</span><b class="${d.live.pts > 0 ? 'up' : d.live.pts < 0 ? 'down' : ''}">${sgn(d.live.pts)}</b></div>
+    <ul>${(d.live.breakdown || []).map((r) => `<li><span><i>${r.n != null ? r.n + '×' : ''}</i>${esc(r.label)}</span><b class="${r.pts > 0 ? 'up' : 'down'}">${sgn(r.pts)}</b></li>`).join('') || '<li><span>Noch keine Punkte</span><b>0</b></li>'}</ul>
+    <div class="calcf"><span>Total</span><b>${sgn(d.live.pts)} Punkte</b></div>
+    <small>Voraussichtlicher Preis morgen: <b>${fmt(d.tomorrow)}</b> ${pill({ price: d.tomorrow, prev: d.price })}</small></div>` : '';
   const trans = d.transfers?.length
     ? `<h2>Transfers</h2><ul class="log">${d.transfers.map((t) => `<li><div>${esc(t.user)} ${t.kind === 'buy' ? 'kauft' : 'verkauft'}<small>vor ${ago(t.at)}</small></div><div style="text-align:right"><b>${fmt(t.price)}</b></div></li>`).join('')}</ul>` : '';
   bg.innerHTML = `<div class="sheet center" role="dialog" aria-modal="true" tabindex="-1" aria-label="${esc(d.first + ' ' + d.last)}">
@@ -167,9 +171,9 @@ async function openPlayer(id) {
     <div class="wmlogo">${logo(d.team)}</div><div class="shead">${logo(d.team)}<div class="sname">${esc(d.first)} ${esc(d.last)}</div><div class="ptag">#${d.number ?? '–'} · ${POS[d.pos]} · ${esc(d.team)}</div></div>
     <div class="photo"><div class="wm">${esc(d.number ?? '')}</div>${avatar(d, true)}</div>
     <div class="big3"><div><b>${fmt(d.points)}</b><span>Punkte</span></div><div><b>${avg(d)}</b><span>Ø Punkte</span></div><div><b>${fmt(d.price)}</b><span>Marktwert ${pill(d)}</span></div></div>
-    <div class="grid4"><div><b>${d.games}</b><span>Spiele</span></div><div><b>${d.goals}</b><span>Tore</span></div><div><b>${d.assists}</b><span>Assists</span></div><div><b>${d.plusMinus > 0 ? '+' : ''}${d.plusMinus}</b><span>+/−</span></div>
+    ${live}<div class="grid4"><div><b>${d.games}</b><span>Spiele</span></div><div><b>${d.goals}</b><span>Tore</span></div><div><b>${d.assists}</b><span>Assists</span></div><div><b>${d.plusMinus > 0 ? '+' : ''}${d.plusMinus}</b><span>+/−</span></div>
       <div><b>${d.shots}</b><span>Schüsse</span></div><div><b>${d.pim}</b><span>Strafmin.</span></div><div><b>${d.wins}</b><span>Siege</span></div><div><b>${d.blocked ?? 0}</b><span>Geblockt</span></div></div>
-    ${injBlock}${live}
+    ${injBlock}
     <div id="g1"><div class="empty">Spiele werden geladen …</div></div>
     <div class="big3 small"><div><b>${d.boughtFor != null ? fmt(d.boughtFor) : '–'}</b><span>Gekauft für</span></div><div><b class="${gain == null ? '' : gain >= 0 ? 'up' : 'down'}">${gain == null ? '–' : sign(gain)}</b><span>Gewinn</span></div><div><b>${fmt(d.price)} <i class="${cls(d)}">${arrow(cls(d))}</i></b><span>Marktwert</span></div></div>
     ${priceChart(d)}
@@ -378,7 +382,11 @@ const views = {
     const [d, t, lg] = await Promise.all([api('/api/live'), api('/api/team'), api('/api/league')]);
     const running = d.games.some((g) => g.state === 'LIVE' || g.state === 'CRIT');
     const head = subtabs('live', [['team', 'Team'], ['league', 'Liga']]);
-    const top = `${running ? '<div class="livebar"><i></i>Spiele laufen · deine Punkte heute: <b>' + d.myPoints + '</b></div>' : countdown(d.nextStart)}`;
+    const nRunning = d.games.filter((g) => g.state === 'LIVE' || g.state === 'CRIT').length;
+    const dayRank = [...lg].sort((x, y) => y.live - x.live || y.points - x.points).findIndex((r) => r.me) + 1;
+    const hero = running || d.myPoints ? `<section class="livehero${running ? ' on' : ''}"><div class="lbl">${running ? '<i></i>Live · ' + nRunning + (nRunning === 1 ? ' Spiel läuft' : ' Spiele laufen') : 'Heute'}</div>
+      <div class="big ${d.myPoints < 0 ? 'down' : ''}">${d.myPoints > 0 ? '+' : ''}${fmt(d.myPoints)}</div><div class="sub">Punkte deiner Aufstellung${dayRank ? ` · <b>${dayRank}.</b> heute in der Liga` : ''}</div></section>` : '';
+    const top = hero + (running ? '' : countdown(d.nextStart));
     if (S.sub.live === 'league') {
       const board = [...lg].sort((x, y) => y.live - x.live || y.points - x.points);
       return `${head}${top}<div class="rhead"><span>Gesamt</span><span>Heute</span></div>
@@ -388,7 +396,9 @@ const views = {
     const pts = new Map(d.mine.map((r) => [r.id, r]));
     const inL = t.players.filter((p) => p.lineup > 0);
     const bench = t.players.filter((p) => p.lineup <= 0);
-    const shown = S.liveSeg === 'bench' ? bench : inL;
+    // most points first; players who have not played yet at the end
+    const livePts = (p) => (p.dressed ? pts.get(p.id)?.pts ?? 0 : -Infinity);
+    const shown = (S.liveSeg === 'bench' ? bench : inL).slice().sort((a, b) => livePts(b) - livePts(a));
     const row = (p) => { const r = pts.get(p.id); return prow(p, { sub: p.dressed ? `<b>${r ? r.goals : 0}</b><small>Tore</small><b>${r ? r.assists : 0}</b><small>Assists</small>` : '<small>noch kein Einsatz</small>', right: `<b class="${r && r.pts > 0 ? 'up' : ''}">${r ? (r.pts > 0 ? '+' : '') + r.pts : 0}</b><small>Live</small>` }); };
     return `${head}${top}
       <div class="floatseg">${seg('lsub', S.liveSeg, [['lineup', 'Aufstellung (' + inL.length + ')'], ['bench', 'Ersatz (' + bench.length + ')']])}</div>
