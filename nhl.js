@@ -254,7 +254,8 @@ export function parseGameLog(json, limit = 100, pos = 'F') {
       const shutout = (g.goalsAgainst ?? 0) === 0 && (g.shotsAgainst ?? 0) > 0 && toiSeconds(g.toi) >= 3540 ? 1 : 0;
       pts = statsToPoints({ pos: 'G', saves, goals_against: g.goalsAgainst ?? 0, win, shutout, dressed: 1, goals: g.goals, assists: g.assists,
         goalie_time: Math.floor(toiSeconds(g.toi) / 600) });
-      text = `${saves} Paraden, ${g.goalsAgainst ?? 0} Gegentore${win ? ', Sieg' : ''}`;
+      const sv = g.shotsAgainst ? ` · ${((saves / g.shotsAgainst) * 100).toFixed(1)} %` : '';
+      text = `${saves} Paraden, ${g.goalsAgainst ?? 0} Gegentore${win ? ', Sieg' : ''}${sv}`;
     } else {
       pts = statsToPoints({ pos, goals: g.goals, assists: g.assists, shots: g.shots, pim: g.pim, plus_minus: g.plusMinus, pp_goals: g.powerPlayGoals,
         sh_goals: g.shorthandedGoals, gwg: g.gameWinningGoals, toi_min: Math.floor(toiSeconds(g.toi) / 60), dressed: 1 });
@@ -365,7 +366,8 @@ export function parseSeasonResults(json) {
   const out = new Map();
   for (const g of json.games ?? []) {
     if ((g.gameState === 'FINAL' || g.gameState === 'OFF') && g.homeTeam?.score != null && g.awayTeam?.score != null) {
-      out.set(g.id, { home: g.homeTeam.score, away: g.awayTeam.score, ot: g.gameOutcome?.lastPeriodType === 'OT' || g.gameOutcome?.lastPeriodType === 'SO' });
+      out.set(g.id, { home: g.homeTeam.score, away: g.awayTeam.score, ot: g.gameOutcome?.lastPeriodType === 'OT' || g.gameOutcome?.lastPeriodType === 'SO',
+        homeTeam: g.homeTeam.abbrev ?? null, awayTeam: g.awayTeam.abbrev ?? null, date: g.gameDate ?? null });
     }
   }
   return out;
@@ -418,8 +420,12 @@ export async function getGameLog(playerId) {
       const row = g.gameId != null ? exact.get(playerId, g.gameId) : null;
       if (row) { g.pts = row.pts; g.exact = true; }
     }
-    logCache.set(playerId, { t: Date.now(), data });
-    return data;
+    // games of his current team in which he did not play (shown with a cross)
+    const team = db.prepare('SELECT team FROM players WHERE id = ?').get(playerId)?.team;
+    if (team && !byTeam.has(team)) { try { byTeam.set(team, await seasonResults(team)); } catch { /* optional */ } }
+    const all = addMissedGames(data, team, byTeam.get(team));
+    logCache.set(playerId, { t: Date.now(), data: all });
+    return all;
   } catch (e) {
     console.log(`Spielverlauf von Spieler ${playerId} nicht geladen: ${e.message}`);
     lastLogError = e.message;
@@ -428,6 +434,27 @@ export async function getGameLog(playerId) {
   }
 }
 export let lastLogError = '';
+
+/**
+ * Add the finished games of his team that are missing from the player's log (scratched, injured, backup goalie),
+ * newest first like the log. After a trade only games from his first game for the new team on.
+ */
+export function addMissedGames(log, team, results) {
+  if (!team || !results) return log;
+  const played = new Set(log.map((g) => g.gameId));
+  const forTeam = log.filter((g) => g.team === team).map((g) => g.date).sort();
+  const traded = log.some((g) => g.team && g.team !== team);
+  const from = traded ? forTeam[0] ?? '9999' : '';
+  const missed = [];
+  for (const [gameId, r] of results) {
+    if (played.has(gameId) || !r.date || r.date < from || (r.homeTeam !== team && r.awayTeam !== team)) continue;
+    const home = r.homeTeam === team;
+    const own = home ? r.home : r.away, opp = home ? r.away : r.home;
+    missed.push({ gameId, team, date: r.date, opp: home ? r.awayTeam : r.homeTeam, home, missed: true, pts: 0, text: 'nicht eingesetzt',
+      result: { own, opp, win: own > opp, ot: !!r.ot } });
+  }
+  return [...log, ...missed].sort((a, b) => String(b.date).localeCompare(String(a.date)));
+}
 
 /** Write season totals into the players table. Fantasy points are calculated from the totals. */
 /** Finished games of this season that the app followed live, with their exact points. */
@@ -442,13 +469,15 @@ export function trackedSeason(playerId, now = new Date()) {
  * view), the NHL-based estimate only for the share of games before that.
  */
 export function applySeasonStats(list) {
-  const upd = db.prepare(`UPDATE players SET games=?, goals=?, assists=?, plus_minus=?, shots=?, pim=?, wins=?, fantasy_pts=? WHERE id=?`);
+  const upd = db.prepare(`UPDATE players SET games=?, goals=?, assists=?, plus_minus=?, shots=?, pim=?, wins=?, fantasy_pts=?,
+    saves=?, goals_against=?, shutouts=? WHERE id=?`);
   tx(() => {
     for (const t of list) {
       const tracked = trackedSeason(t.id);
       const known = Math.min(tracked.games, t.games);
       const rest = t.games > 0 ? seasonPoints(t) * ((t.games - known) / t.games) : 0;
-      upd.run(t.games, t.goals, t.assists, t.plus_minus, t.shots, t.pim, t.wins, Math.round(tracked.pts + rest), t.id);
+      upd.run(t.games, t.goals, t.assists, t.plus_minus, t.shots, t.pim, t.wins, Math.round(tracked.pts + rest),
+        t.saves || 0, t.goals_against || 0, t.shutouts || 0, t.id);
     }
   });
   return list.length;

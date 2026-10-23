@@ -117,6 +117,8 @@ function bigChart(h) {
 const hoursText = (h) => (h == null ? '' : h <= 1 ? '1 Std' : `${h} Std`);
 const sign = (n) => (n > 0 ? '+' : n < 0 ? '−' : '') + fmt(Math.abs(n));
 const avg = (p) => (p.games ? Math.round(p.points / p.games) : 0);
+/** Save percentage like 91.2 %, or – when the goalie has not faced a shot yet. */
+const pctText = (v) => (v == null ? '–' : `${(v * 100).toFixed(1)}%`);
 const ago = (iso) => {
   const m = Math.max(0, Math.round((Date.now() - new Date(iso)) / 60000));
   return m < 60 ? `${m} Min` : m < 1440 ? `${Math.round(m / 60)} Std` : `${Math.round(m / 1440)} T`;
@@ -149,7 +151,7 @@ function prow(p, o = {}) {
   const nhl = p.nhlLineup === 'in' ? ' <span class="nhlin">Line-Up</span>' : '';
   const badges = [p.lineup > 0 ? '<span class="lock lineup">In Aufstellung</span>' : '', gameBadge(p), injuryBadge(p), p.tradeLocked ? '<span class="lock">Gesperrt</span>' : '', p.owned && o.owned ? '<span class="lock own">Im Kader</span>' : '', p.ownerName && !p.owned ? `<span class="lock">Im Kader von ${esc(p.ownerName)}</span>` : '', p.myBid ? `<span class="lock own">Dein Gebot ${fmt(p.myBid)}</span>` : '', p.listedBy ? `<span class="lock">Angebot von ${esc(p.listedBy)}</span>` : ''].filter(Boolean).join(' ');
   const right = o.right ?? `<b>${fmt(p.price)}</b><small>${o.rightLabel || 'Marktwert'}</small>`;
-  const sub = o.sub ?? `<b>${fmt(p.points)}</b><small>Punkte</small><b>${avg(p)}</b><small>Ø Punkte</small>`;
+  const sub = o.sub ?? `<span class="pair"><b>${fmt(p.points)}</b><small>Punkte</small></span><span class="pair"><b>${avg(p)}</b><small>Ø Punkte</small></span>${p.pos === 'G' && p.savePct != null ? `<span class="pair"><b>${pctText(p.savePct)}</b><small>Fangquote</small></span>` : ''}`;
   const tc = (TEAM_COLORS[p.team] || ['#2c3e63'])[0];
   return `<div class="prow${o.btn ? ' hasbtn' : ''}" style="--tc:${tc}" data-open="${p.id}" tabindex="0" role="button" aria-label="${esc(p.first + ' ' + p.last)}">
     ${avatar(p)}<div class="pmain"><div class="ptag">${esc(tag)}${nhl}${o.timer && p.onMarket ? ` <span class="timer">${hoursText(p.hoursLeft)}</span>` : ''}</div>
@@ -188,8 +190,10 @@ async function openPlayer(id) {
     <div class="wmlogo">${logo(d.team)}</div><div class="shead">${logo(d.team)}<div class="sname">${esc(d.first)} ${esc(d.last)}</div><div class="ptag">#${d.number ?? '–'} · ${POS[d.pos]}</div><div class="sclub">${esc(teamName(d.team))}</div></div>
     <div class="photo"><div class="wm">${esc(d.number ?? '')}</div>${avatar(d, true)}</div>
     <div class="big3"><div><b>${fmt(d.points)}</b><span>Punkte</span></div><div><b>${avg(d)}</b><span>Ø Punkte</span></div><div><b>${fmt(d.price)}</b><span>Marktwert ${pill(d)}</span></div></div>
-    ${live}<div class="grid4"><div><b>${d.games}</b><span>Spiele</span></div><div><b>${d.goals}</b><span>Tore</span></div><div><b>${d.assists}</b><span>Assists</span></div><div><b>${d.plusMinus > 0 ? '+' : ''}${d.plusMinus}</b><span>+/−</span></div>
-      <div><b>${d.shots}</b><span>Schüsse</span></div><div><b>${d.pim}</b><span>Strafmin.</span></div><div><b>${d.wins}</b><span>Siege</span></div><div><b>${d.blocked ?? 0}</b><span>Geblockt</span></div></div>
+    ${live}${d.pos === 'G' ? `<div class="grid4"><div><b>${d.games}</b><span>Spiele</span></div><div><b>${d.wins}</b><span>Siege</span></div><div><b>${d.shutouts ?? 0}</b><span>Shutouts</span></div><div class="hi"><b>${pctText(d.savePct)}</b><span>Fangquote</span></div>
+      <div><b>${fmt(d.saves ?? 0)}</b><span>Paraden</span></div><div><b>${d.goalsAgainst ?? 0}</b><span>Gegentore</span></div><div><b>${d.games ? ((d.goalsAgainst ?? 0) / d.games).toFixed(2) : '–'}</b><span>GT / Spiel</span></div><div><b>${d.pim}</b><span>Strafmin.</span></div></div>`
+    : `<div class="grid4"><div><b>${d.games}</b><span>Spiele</span></div><div><b>${d.goals}</b><span>Tore</span></div><div><b>${d.assists}</b><span>Assists</span></div><div><b>${d.plusMinus > 0 ? '+' : ''}${d.plusMinus}</b><span>+/−</span></div>
+      <div><b>${d.shots}</b><span>Schüsse</span></div><div><b>${d.pim}</b><span>Strafmin.</span></div><div><b>${d.wins}</b><span>Siege</span></div><div><b>${d.blocked ?? 0}</b><span>Geblockt</span></div></div>`}
     ${injBlock}
     <div id="g1"><div class="empty">Spiele werden geladen …</div></div>
     <div class="big3 small"><div><b>${d.boughtFor != null ? fmt(d.boughtFor) : '–'}</b><span>Gekauft für</span></div><div><b class="${gain == null ? '' : gain >= 0 ? 'up' : 'down'}">${gain == null ? '–' : sign(gain)}</b><span>Gewinn</span></div><div><b>${fmt(d.price)} <i class="${cls(d)}">${arrow(cls(d))}</i></b><span>Marktwert</span></div></div>
@@ -223,14 +227,15 @@ const dm = (s) => { const [y, m, d] = String(s).split('-'); return d && m ? `${d
 function gamesHtml(log, err, d) {
   if (!log || !log.length) return `<div class="empty">${log ? 'Noch keine Spiele in dieser Saison.' : 'Die Spiele konnten gerade nicht geladen werden.'}${err ? `<br><small>${esc(err)}</small>` : ''}</div>`;
   const last = [...log].reverse(); // oldest on the left
-  const mx = Math.max(1, ...last.map((g) => Math.abs(g.pts)));
+  const mx = Math.max(1, ...last.filter((g) => !g.missed).map((g) => Math.abs(g.pts)));
   const av = d.games ? d.points / d.games : 0;
   const cols = last.map((g) => {
-    const h = Math.max(10, Math.round(Math.abs(g.pts) / mx * 96));
-    const hot = g.pts > av * 1.15;
     const left = g.home ? g.team : g.opp, right = g.home ? g.opp : g.team;
     const r = g.result;
     const score = r ? (g.home ? `${r.own}:${r.opp}` : `${r.opp}:${r.own}`) : '';
+    if (g.missed) return `<div class="gcol miss" title="Nicht eingesetzt"><div class="gbar"><span class="gx">✕</span></div><b>–</b><div class="glogos">${logo(left)}${logo(right)}</div><small>${score}</small></div>`;
+    const h = Math.max(10, Math.round(Math.abs(g.pts) / mx * 96));
+    const hot = g.pts > av * 1.15;
     return `<div class="gcol"><div class="gbar"><i class="${hot ? 'hot' : ''}${g.pts < 0 ? ' neg' : ''}" style="height:${h}px"></i></div><b>${g.pts}</b><div class="glogos">${logo(left)}${logo(right)}</div><small>${score}</small></div>`;
   }).join('');
   return `<div class="gwrap"><div class="gcols" data-scrollend>${cols}</div><div class="season"><span>Saison ${seasonLabel}</span><b>${fmt(d.points)}</b><small>Punkte</small><b>${avg(d)}</b><small>Ø</small><b>${d.games}</b><small>Spiele</small></div></div>${seasonNote(d)}`;
@@ -245,9 +250,12 @@ function seasonNote(d) {
 }
 function gamesListHtml(log) {
   if (!log || !log.length) return '';
-  const chrono = [...log].reverse();
-  const list = log.map((g, k) => `<li><div><b>${chrono.length - k}. Spiel</b> · ${g.home ? 'vs' : '@'} ${esc(g.opp)} ${res(g)}<small>${dm(g.date)} · ${esc(g.text)}</small></div><div style="text-align:right"><b>${g.pts} Pkt</b></div></li>`).join('');
-  return `<details class="fold" open><summary><h2>Punkte pro Spiel <small>${chrono.length} Spiele</small></h2></summary><ul class="log">${list}</ul></details>`;
+  let n = log.filter((g) => !g.missed).length; // games he played, counted down from the newest
+  const total = n;
+  const list = log.map((g) => g.missed
+    ? `<li class="miss"><div><b>✕ Nicht eingesetzt</b> · ${g.home ? 'vs' : '@'} ${esc(g.opp)} ${res(g)}<small>${dm(g.date)}</small></div><div style="text-align:right"><b>–</b></div></li>`
+    : `<li><div><b>${n--}. Spiel</b> · ${g.home ? 'vs' : '@'} ${esc(g.opp)} ${res(g)}<small>${dm(g.date)} · ${esc(g.text)}</small></div><div style="text-align:right"><b>${g.pts} Pkt</b></div></li>`).join('');
+  return `<details class="fold" open><summary><h2>Punkte pro Spiel <small>${total} Spiele</small></h2></summary><ul class="log">${list}</ul></details>`;
 }
 
 /** Price curve with axis labels, like Topscorers. */

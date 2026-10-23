@@ -246,6 +246,10 @@ test('season stats come from the NHL table, not from days counted since the app 
   assert.equal(h.fantasy_pts, Math.round(tracked.pts + estimate * 7 / 8));
   const g = db.prepare('SELECT games, wins, fantasy_pts FROM players WHERE id=8480010').get();
   assert.deepEqual([g.games, g.wins], [6, 4]);
+  // goalie season totals are kept for the save percentage
+  const gs = db.prepare('SELECT saves, goals_against, shutouts FROM players WHERE id=8480010').get();
+  assert.deepEqual([gs.saves, gs.goals_against, gs.shutouts], [150, 12, 1]);
+  assert.equal(game.playerDetail(1, 8480010).savePct, 150 / 162);
   const gt = nhl.trackedSeason(8480010);
   assert.equal(g.fantasy_pts, Math.round(gt.pts + (150 * 4 - 12 * 15 + 4 * 15 + 40 + 6 * 5) * (6 - gt.games) / 6));
   // a later game day being finalized must not overwrite the NHL totals
@@ -275,7 +279,7 @@ test('game log: last games of a skater and a goalie in plain words', () => {
   assert.equal(rows[0].home, true);
   assert.equal(rows[1].home, false);
   assert.equal(rows[1].text, 'kein Punkt, -1, 1 Schüsse');
-  assert.equal(rows[2].text, '28 Paraden, 2 Gegentore, Sieg');
+  assert.equal(rows[2].text, '28 Paraden, 2 Gegentore, Sieg · 93.3 %'); // 28 of 30 shots
   assert.equal(rows[2].pts, 28 * 4 - 2 * 15 + 5 + 6); // + goalie time bonus for 60 minutes
 });
 
@@ -570,4 +574,24 @@ test('league history: cumulative points and rank change', async () => {
   assert.ok(h.change[b] > 0 && h.change[a] < 0); // b climbed, a fell
   // stable after a reload: the same request gives the same answer
   assert.deepEqual(game.leagueHistory(a), h);
+});
+
+test('game log: games of his team he did not play come in as missed, in the right order', async () => {
+  const nhl = await import('./nhl.js');
+  const res = nhl.parseSeasonResults({ games: [
+    { id: 11, gameDate: '2026-10-10', gameState: 'OFF', homeTeam: { abbrev: 'UTA', score: 2 }, awayTeam: { abbrev: 'NYR', score: 4 } },
+    { id: 12, gameDate: '2026-10-12', gameState: 'OFF', homeTeam: { abbrev: 'BOS', score: 6 }, awayTeam: { abbrev: 'UTA', score: 1 } },
+    { id: 13, gameDate: '2026-10-14', gameState: 'OFF', homeTeam: { abbrev: 'UTA', score: 5 }, awayTeam: { abbrev: 'NJD', score: 3 } },
+    { id: 14, gameDate: '2026-10-16', gameState: 'FUT', homeTeam: { abbrev: 'UTA' }, awayTeam: { abbrev: 'BUF' } },
+  ] });
+  const log = [{ gameId: 13, team: 'UTA', date: '2026-10-14', pts: 100 }, { gameId: 11, team: 'UTA', date: '2026-10-10', pts: 22 }];
+  const all = nhl.addMissedGames(log, 'UTA', res);
+  assert.deepEqual(all.map((g) => [g.gameId, !!g.missed]), [[13, false], [12, true], [11, false]]); // newest first, future game left out
+  const m = all[1];
+  assert.equal(m.opp, 'BOS');
+  assert.equal(m.home, false);
+  assert.deepEqual(m.result, { own: 1, opp: 6, win: false, ot: false });
+  // after a trade: no crosses before his first game for the new team
+  const traded = nhl.addMissedGames([{ gameId: 13, team: 'UTA', date: '2026-10-14' }, { gameId: 9, team: 'COL', date: '2026-10-08' }], 'UTA', res);
+  assert.ok(!traded.some((g) => g.missed));
 });
