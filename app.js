@@ -11,6 +11,16 @@ const TEAM_COLORS = {
   WSH: ['#c8102e', '#fff'], WPG: ['#2a4a86', '#fff'],
 };
 const POS = { F: 'Stürmer', D: 'Verteidiger', G: 'Torhüter' };
+const TEAM_NAMES = {
+  ANA: 'Anaheim Ducks', BOS: 'Boston Bruins', BUF: 'Buffalo Sabres', CGY: 'Calgary Flames', CAR: 'Carolina Hurricanes',
+  CHI: 'Chicago Blackhawks', COL: 'Colorado Avalanche', CBJ: 'Columbus Blue Jackets', DAL: 'Dallas Stars', DET: 'Detroit Red Wings',
+  EDM: 'Edmonton Oilers', FLA: 'Florida Panthers', LAK: 'Los Angeles Kings', MIN: 'Minnesota Wild', MTL: 'Montréal Canadiens',
+  NSH: 'Nashville Predators', NJD: 'New Jersey Devils', NYI: 'New York Islanders', NYR: 'New York Rangers', OTT: 'Ottawa Senators',
+  PHI: 'Philadelphia Flyers', PIT: 'Pittsburgh Penguins', SEA: 'Seattle Kraken', SJS: 'San Jose Sharks', STL: 'St. Louis Blues',
+  TBL: 'Tampa Bay Lightning', TOR: 'Toronto Maple Leafs', UTA: 'Utah Mammoth', VAN: 'Vancouver Canucks', VGK: 'Vegas Golden Knights',
+  WSH: 'Washington Capitals', WPG: 'Winnipeg Jets',
+};
+const teamName = (t) => TEAM_NAMES[t] || t;
 
 const S = { scrollNext: false, wantNext: false, gsub: 'up', line: 1, team: null, tab: 'board', sub: { team: 'market', league: 'rank', nhl: 'games', live: 'team' }, liveSeg: 'lineup', mode: 'buy', me: null, pos: '', sort: 'expiry', q: '', top: '', timer: null, cd: null };
 
@@ -25,7 +35,7 @@ const pct = (p) => (p.prev ? ((p.price - p.prev) / p.prev) * 100 : 0);
 const cls = (p) => (p.price > p.prev ? 'up' : p.price < p.prev ? 'down' : 'flat');
 const arrow = (c) => (c === 'up' ? '▲' : c === 'down' ? '▼' : '–');
 const pill = (p) => { const c = cls(p); return `<span class="pill ${c}">${arrow(c)} ${Math.abs(pct(p)).toFixed(1)}%</span>`; };
-const logo = (t) => `<img src="https://assets.nhle.com/logos/nhl/svg/${esc(t)}_light.svg" alt="" loading="lazy">`;
+const logo = (t) => `<img src="https://assets.nhle.com/logos/nhl/svg/${esc(t)}_dark.svg" alt="" loading="lazy">`; // version for dark backgrounds
 
 const apiCache = new Map(); // GET responses for a few seconds, so switching tabs back and forth feels instant
 const apiFlight = new Map();
@@ -69,7 +79,10 @@ function toast(msg) {
 }
 
 document.addEventListener('error', (e) => {
-  if (e.target.tagName === 'IMG') e.target.remove(); // missing photo or logo: fall back to initials or nothing
+  if (e.target.tagName !== 'IMG') return;
+  const src = e.target.getAttribute('src') || '';
+  if (src.endsWith('_dark.svg')) { e.target.src = src.replace('_dark.svg', '_light.svg'); return; } // no dark logo: use the normal one
+  e.target.remove(); // missing photo or logo: fall back to initials or nothing
 }, true);
 
 function avatar(p, large) {
@@ -135,11 +148,13 @@ function prow(p, o = {}) {
   const badges = [p.lineup > 0 ? '<span class="lock lineup">In Aufstellung</span>' : '', gameBadge(p), injuryBadge(p), p.tradeLocked ? '<span class="lock">Gesperrt</span>' : '', p.owned && o.owned ? '<span class="lock own">Im Kader</span>' : '', p.ownerName && !p.owned ? `<span class="lock">Im Kader von ${esc(p.ownerName)}</span>` : '', p.myBid ? `<span class="lock own">Dein Gebot ${fmt(p.myBid)}</span>` : '', p.listedBy ? `<span class="lock">Angebot von ${esc(p.listedBy)}</span>` : ''].filter(Boolean).join(' ');
   const right = o.right ?? `<b>${fmt(p.price)}</b><small>${o.rightLabel || 'Marktwert'}</small>`;
   const sub = o.sub ?? `<b>${fmt(p.points)}</b><small>Punkte</small><b>${avg(p)}</b><small>Ø Punkte</small>`;
-  return `<div class="prow${o.btn ? ' hasbtn' : ''}" data-open="${p.id}" tabindex="0" role="button" aria-label="${esc(p.first + ' ' + p.last)}">
+  const tc = (TEAM_COLORS[p.team] || ['#2c3e63'])[0];
+  return `<div class="prow${o.btn ? ' hasbtn' : ''}" style="--tc:${tc}" data-open="${p.id}" tabindex="0" role="button" aria-label="${esc(p.first + ' ' + p.last)}">
     ${avatar(p)}<div class="pmain"><div class="ptag">${esc(tag)}${nhl}${o.timer && p.onMarket ? ` <span class="timer">${hoursText(p.hoursLeft)}</span>` : ''}</div>
       <div class="pn">${esc(p.last)}${p.first ? `<small>${esc(p.first)}</small>` : ''}</div>
+      <div class="pclub">${esc(teamName(p.team))}</div>
       <div class="pnums">${sub}</div>${badges ? `<div class="pbadges">${badges}</div>` : ''}</div>
-    <div class="pright">${logo(p.team)}<div class="pval">${right}</div>${o.btn || ''}</div></div>`;
+    <div class="pright"><span class="plogo">${logo(p.team)}</span><div class="pval">${right}</div>${o.btn || ''}</div></div>`;
 }
 
 async function openPlayer(id) {
@@ -168,7 +183,7 @@ async function openPlayer(id) {
     ? `<h2>Transfers</h2><ul class="log">${d.transfers.map((t) => `<li><div>${esc(t.user)} ${t.kind === 'buy' ? 'kauft' : 'verkauft'}<small>vor ${ago(t.at)}</small></div><div style="text-align:right"><b>${fmt(t.price)}</b></div></li>`).join('')}</ul>` : '';
   bg.innerHTML = `<div class="sheet center" role="dialog" aria-modal="true" tabindex="-1" aria-label="${esc(d.first + ' ' + d.last)}">
     <button class="close" data-close aria-label="Schliessen">✕</button>
-    <div class="wmlogo">${logo(d.team)}</div><div class="shead">${logo(d.team)}<div class="sname">${esc(d.first)} ${esc(d.last)}</div><div class="ptag">#${d.number ?? '–'} · ${POS[d.pos]} · ${esc(d.team)}</div></div>
+    <div class="wmlogo">${logo(d.team)}</div><div class="shead">${logo(d.team)}<div class="sname">${esc(d.first)} ${esc(d.last)}</div><div class="ptag">#${d.number ?? '–'} · ${POS[d.pos]}</div><div class="sclub">${esc(teamName(d.team))}</div></div>
     <div class="photo"><div class="wm">${esc(d.number ?? '')}</div>${avatar(d, true)}</div>
     <div class="big3"><div><b>${fmt(d.points)}</b><span>Punkte</span></div><div><b>${avg(d)}</b><span>Ø Punkte</span></div><div><b>${fmt(d.price)}</b><span>Marktwert ${pill(d)}</span></div></div>
     ${live}<div class="grid4"><div><b>${d.games}</b><span>Spiele</span></div><div><b>${d.goals}</b><span>Tore</span></div><div><b>${d.assists}</b><span>Assists</span></div><div><b>${d.plusMinus > 0 ? '+' : ''}${d.plusMinus}</b><span>+/−</span></div>
