@@ -613,3 +613,24 @@ test('skater profile: blocked shots and faceoffs won come from the games the app
   assert.equal(d.foWon, 7);
   assert.equal(d.seasonExact, 2);
 });
+
+test('season blocked shots and faceoffs from the NHL stats API replace the counted ones', async () => {
+  const { db } = await import('./db.js');
+  const game = await import('./game.js');
+  const nhl = await import('./nhl.js');
+  assert.deepEqual([...nhl.parseStatsRows({ data: [{ playerId: 1, blockedShots: 4 }, { playerId: 2 }] }, 'blockedShots')], [[1, 4]]);
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const u = String(url);
+    assert.ok(u.startsWith('https://api.nhle.com/stats/rest/en/skater/'), u);
+    assert.ok(decodeURIComponent(u).includes('gameTypeId=2'));
+    const data = u.includes('/realtime') ? [{ playerId: 8495001, blockedShots: 31 }] : [{ playerId: 8495001, totalFaceoffWins: 142 }];
+    return new Response(JSON.stringify({ data }), { status: 200 });
+  };
+  try { await nhl.syncExtraStats({ log: () => {} }); } finally { globalThis.fetch = realFetch; }
+  const d = game.playerDetail(1, 8495001);
+  assert.equal(d.blocked, 31);
+  assert.equal(d.foWon, 142);
+  assert.equal(d.extraSeason, true);
+  assert.equal(db.prepare('SELECT fo_won FROM players WHERE id = 8495001').get().fo_won, 142);
+});

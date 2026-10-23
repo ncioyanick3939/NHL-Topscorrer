@@ -68,6 +68,8 @@ export const NHL_TEAMS = [
 ];
 
 export const NHL_API = 'https://api-web.nhle.com/v1';
+// NHL statistics API: season totals the web API does not have (blocked shots, faceoffs won). Optional.
+export const NHL_STATS_API = 'https://api.nhle.com/stats/rest/en';
 
 // Unofficial injury list (the NHL web API has no injury data). Optional: if it fails, the app still works.
 export const INJURY_URL = 'https://site.api.espn.com/apis/site/v2/sports/hockey/nhl/injuries';
