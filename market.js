@@ -46,7 +46,7 @@ export function refreshMarket(now = new Date()) {
       .all(now.toISOString());
     for (const e of expired) {
       // A player whose team plays today cannot change hands yet: his auction is settled once the day is closed.
-      if (isLocked(e.player_id) && db.prepare('SELECT 1 FROM bids WHERE player_id = ?').get(e.player_id)) continue;
+      if (RULES.marketLock && isLocked(e.player_id) && db.prepare('SELECT 1 FROM bids WHERE player_id = ?').get(e.player_id)) continue;
       resolveMarket(e.player_id);
       db.prepare('DELETE FROM market_listings WHERE player_id = ?').run(e.player_id);
       // The replacement keeps the hourly rhythm: it leaves 48 hours after the offer it replaces.
