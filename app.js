@@ -306,6 +306,26 @@ function dataStamp() {
   return `<div class="stamp ok"><i></i>NHL-Daten aktualisiert vor ${ago(new Date(d.updatedAt).toISOString())}</div>`;
 }
 
+/** My place in the league: rank, leader, gap. A tap opens the table. */
+function standingHtml(lg) {
+  const i = lg.findIndex((r) => r.me);
+  if (i < 0 || !lg.length) return '';
+  const me = lg[i], lead = lg[0];
+  const gap = i === 0
+    ? (lg[1] ? `Du führst mit <b>${fmt(me.points - lg[1].points)}</b> Punkten Vorsprung` : 'Du bist allein in der Liga')
+    : `<b>${fmt(lead.points - me.points)}</b> Punkte hinter ${esc(lead.name)}`;
+  return `<section class="standing" data-goto="league:rank" role="button" tabindex="0">
+    <div class="srank"><b>${i + 1}.</b><small>von ${lg.length}</small></div>
+    <div class="grow"><small>Spitze</small><div class="slead">${esc(lead.name)} <span>${fmt(lead.points)} Pkt.</span></div><div class="sgap">${gap}</div></div>
+    <span class="chev" aria-hidden="true">›</span></section>`;
+}
+/** The latest finished NHL games, newest first. */
+function resultsHtml(games) {
+  const done = (games || []).filter((g) => g.state === 'FINAL' || g.state === 'OFF').sort((a, b) => String(b.start).localeCompare(String(a.start))).slice(0, 4);
+  if (!done.length) return '';
+  return `<h2>Letzte Resultate <small>NHL</small></h2>${done.map((g) => `<div class="game" data-game="${g.id}" role="button" tabindex="0"><div class="t">${logo(g.home)}${esc(g.home)}</div><div class="mid"><b>${g.homeScore ?? '–'} : ${g.awayScore ?? '–'}</b><small>Ende</small></div><div class="t r">${esc(g.away)}${logo(g.away)}</div></div>`).join('')}`;
+}
+
 /* ---------- views ---------- */
 const medal = (i) => (i < 3 ? ` m${i + 1}` : '');
 const subtabs = (key, items) => `<div class="subtabs">${items.map(([v, l]) => `<button data-sub="${key}:${v}" aria-selected="${S.sub[key] === v}">${l}</button>`).join('')}</div>`;
@@ -364,7 +384,8 @@ function tickCountdown() {
 
 const views = {
   async board() {
-    const [team, moves, live, trend] = await Promise.all([api('/api/team'), api('/api/moves'), api('/api/live'), api('/api/trend')]);
+    const [team, moves, live, trend, lg, tops] = await Promise.all([api('/api/team'), api('/api/moves'), api('/api/live'), api('/api/trend'), api('/api/league'), api('/api/topscorers').catch(() => [])]);
+    S.games = S.games || live.games; // so a tap on a result opens the game sheet
     const gain = team.value - team.invested;
     const gc = gain > 0 ? 'up' : gain < 0 ? 'down' : 'flat';
     const hurt = team.players.filter((p) => p.injury || p.missedLast);
@@ -372,6 +393,9 @@ const views = {
     return `<section class="hero"><div class="lbl">Teamwert</div><div class="big" data-count="${team.value}" data-count-key="teamvalue">${fmt(team.value)}</div>
       <span class="pill ${gc}">${gain ? `${arrow(gc)} ${gain > 0 ? '+' : '−'}${fmt(Math.abs(gain))} seit Kauf` : 'Unverändert seit Kauf'}</span></section>
       <div class="tiles"><div class="tile"><b>${S.me.rank}.</b><span>Rang</span></div><div class="tile"><b>${fmt(team.points + live.myPoints)}</b><span>Punkte</span></div><div class="tile"><b>${money(team.balance)}</b><span>Konto</span></div></div>${dataStamp()}
+      ${standingHtml(lg)}
+      ${resultsHtml(live.games)}
+      ${tops.length ? `<h2>NHL-Topscorer <small>Fantasy-Punkte der Saison</small></h2>${tops.slice(0, 3).map((p, i) => `<div class="mv" data-open="${p.id}"><span><b class="tsn">${i + 1}.</b> ${esc(p.first[0] || '')}. ${esc(p.last)} <small>${esc(p.team)}</small></span><b>${fmt(p.points)}</b></div>`).join('')}<button class="link more" data-goto="nhl:top">Alle Topscorer</button>` : ''}
       <h2>Markt <small>geht er hoch oder runter?</small></h2>${trendHtml(trend, true)}
       <h2>Heute <small>${running ? running + ' Spiele laufen' : 'kein Spiel läuft'}</small></h2>
       ${live.mine.length ? live.mine.slice(0, 3).map((r) => `<div class="card" data-open="${r.id}"><div class="row"><div class="grow"><div class="pname"><span>${esc(r.team)}</span>${esc(r.name)}</div></div><div class="price"><b>${r.pts > 0 ? '+' : ''}${r.pts}</b><span class="pill flat">morgen ca. ${fmt(r.tomorrow)}</span></div></div></div>`).join('') : '<div class="empty">Heute noch keine Punkte für dein Team.</div>'}
@@ -432,14 +456,16 @@ const views = {
   },
 
   async league() {
-    const head = subtabs('league', [['rank', 'Rangliste'], ['ticker', 'Liga-Ticker']]);
+    const head = subtabs('league', [['rank', 'Rangliste'], ['curve', 'Verlauf'], ['ticker', 'Liga-Ticker']]);
+    if (S.sub.league === 'curve') return head + curveHtml(await api('/api/league/history'));
     if (S.sub.league === 'ticker') {
       const rows = await api('/api/ticker');
       return `${head}${rows.length ? rows.map((r) => `<div class="tick" data-open="${r.playerId}"><div class="ago">vor ${ago(r.at)}</div><b>${esc(r.user)}</b> ${r.kind === 'buy' ? 'kauft' : 'verkauft'} <b>${esc(r.player.toUpperCase())}</b> für ${fmt(r.price)}</div>`).join('') : '<div class="empty">Noch keine Transfers in deiner Liga.</div>'}`;
     }
-    const rows = await api('/api/league');
-    return `${head}<div class="rhead"><span>Teamwert</span><span>Punkte</span></div>
-      ${rows.map((r, i) => `<div class="rank${r.me ? ' me' : ''}${medal(i)}" data-manager="${r.id}" role="button" tabindex="0"><div class="n">${i + 1}.</div><div class="grow"><div class="rname">${esc(r.name)}</div></div><div class="rv">${fmt(r.value)}</div><div class="rp">${fmt(r.points)}${r.live ? `<small>+${r.live} heute</small>` : ''}</div></div>`).join('')}`;
+    const [rows, hist] = await Promise.all([api('/api/league'), api('/api/league/history').catch(() => null)]);
+    const delta = (id) => { const c = hist?.change?.[id] ?? 0; return c > 0 ? `<i class="rch up">▲${c}</i>` : c < 0 ? `<i class="rch down">▼${-c}</i>` : ''; };
+    return `${head}${awardsHtml(hist)}<div class="rhead"><span>Teamwert</span><span>Punkte</span></div>
+      ${rows.map((r, i) => `<div class="rank${r.me ? ' me' : ''}${medal(i)}" data-manager="${r.id}" role="button" tabindex="0"><div class="n">${i + 1}.</div><div class="grow"><div class="rname">${esc(r.name)}${delta(r.id)}</div></div><div class="rv">${fmt(r.value)}</div><div class="rp">${fmt(r.points)}${r.live ? `<small>+${r.live} heute</small>` : ''}</div></div>`).join('')}`;
   },
 
   async live() {
@@ -500,9 +526,39 @@ const views = {
 
 let renderId = 0;
 const htmlCache = new Map();
+/** Winner of the last day and of the last 7 days, biggest climber. */
+function awardsHtml(h) {
+  const a = h?.awards;
+  if (!a) return '';
+  const day = (iso) => { const [, m, d] = String(iso).split('-'); return `${d}.${m}.`; };
+  const tile = (icon, label, x, val) => `<div class="aw${x?.me ? ' me' : ''}"><span>${icon} ${label}</span><b>${x ? esc(x.name) : '–'}</b><small>${x ? val : 'noch offen'}</small></div>`;
+  return `<div class="awards">${tile('🏆', `Tag ${a.day ? day(a.day.on) : ''}`, a.day, a.day && `+${fmt(a.day.v)} Pkt.`)}${tile('📅', '7 Tage', a.week, a.week && `${fmt(a.week.v)} Pkt.`)}${tile('🚀', 'Aufsteiger', a.climber, a.climber && `▲ ${a.climber.v} ${a.climber.v === 1 ? 'Platz' : 'Plätze'}`)}</div>`;
+}
+const CURVE_COLORS = ['#3d7bff', '#e5384f', '#3fd68a', '#b47cff', '#ff8a3d', '#4fd1e8', '#f472b6', '#a3e635'];
+/** Season curve: cumulative points of every manager per closed day. */
+function curveHtml(h) {
+  if (!h || h.days.length < 2) return '<div class="empty">Der Verlauf erscheint, sobald mindestens zwei Spieltage abgeschlossen sind.</div>';
+  const W = 340, H = 220, L = 8, R = 8, T = 12, B = 22;
+  const max = Math.max(1, ...h.series.map((s) => s.cum.at(-1)), ...h.series.flatMap((s) => s.cum));
+  const min = Math.min(0, ...h.series.flatMap((s) => s.cum));
+  const x = (i) => L + (i / (h.days.length - 1)) * (W - L - R);
+  const y = (v) => T + (1 - (v - min) / (max - min || 1)) * (H - T - B);
+  let k = 0;
+  const lines = [...h.series].sort((a, b) => (a.me ? 1 : 0) - (b.me ? 1 : 0)).map((s) => {
+    const color = s.me ? '#ffc400' : CURVE_COLORS[k++ % CURVE_COLORS.length];
+    s.color = color;
+    return `<polyline points="${s.cum.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ')}" fill="none" stroke="${color}" stroke-width="${s.me ? 3.5 : 2}" stroke-linejoin="round" stroke-linecap="round" opacity="${s.me ? 1 : 0.85}"/>`;
+  }).join('');
+  const dm2 = (iso) => { const [, m, d] = iso.split('-'); return `${d}.${m}.`; };
+  const lbl = [0, h.days.length - 1].map((i, n) => `<text x="${x(i).toFixed(1)}" y="${H - 5}" text-anchor="${n ? 'end' : 'start'}" class="ax">${dm2(h.days[i])}</text>`).join('');
+  const legend = [...h.series].sort((a, b) => b.cum.at(-1) - a.cum.at(-1)).map((s, i) => `<div class="lg${s.me ? ' me' : ''}"><i style="background:${s.color}"></i><span>${i + 1}. ${esc(s.name)}</span><b>${fmt(s.cum.at(-1))}</b></div>`).join('');
+  return `<h2>Saisonverlauf <small>Punkte nach jedem Spieltag</small></h2><div class="chart curve"><svg viewBox="0 0 ${W} ${H}" aria-label="Saisonverlauf">${lines}${lbl}</svg></div><div class="legend">${legend}</div>
+    <div class="note">Gezählt werden abgeschlossene Spieltage. Die Punkte des laufenden Tages kommen nach dem Tagesabschluss dazu.</div>`;
+}
+
 const SUBHEAD = {
   team: () => TEAMTABS(),
-  league: () => subtabs('league', [['rank', 'Rangliste'], ['ticker', 'Liga-Ticker']]),
+  league: () => subtabs('league', [['rank', 'Rangliste'], ['curve', 'Verlauf'], ['ticker', 'Liga-Ticker']]),
   live: () => subtabs('live', [['team', 'Team'], ['league', 'Liga']]),
   nhl: () => subtabs('nhl', [['games', 'Spiele'], ['top', 'Topscorer']]),
 };
@@ -852,6 +908,8 @@ document.addEventListener('click', async (e) => {
   if (cn) return act('/api/offer/cancel', { playerId: Number(cn.dataset.canceloffer) }, 'Angebot zurückgezogen');
   const open = t.closest('[data-open]');
   if (open) return openPlayer(open.dataset.open);
+  const go = t.closest('[data-goto]');
+  if (go) { const [tab, sub] = go.dataset.goto.split(':'); S.tab = tab; if (sub) S.sub[tab] = sub; window.scrollTo(0, 0); return render(); }
   const tab = t.closest('nav.bar button');
   if (tab) { S.tab = tab.dataset.t; if (S.tab === 'nhl' && S.sub.nhl === 'games') S.scrollNext = true; window.scrollTo(0, 0); return render(); }
   const sub = t.closest('[data-sub]');
