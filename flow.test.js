@@ -571,3 +571,23 @@ test('league history: cumulative points and rank change', async () => {
   // stable after a reload: the same request gives the same answer
   assert.deepEqual(game.leagueHistory(a), h);
 });
+
+test('game log: games of his team he did not play come in as missed, in the right order', async () => {
+  const nhl = await import('./nhl.js');
+  const res = nhl.parseSeasonResults({ games: [
+    { id: 11, gameDate: '2026-10-10', gameState: 'OFF', homeTeam: { abbrev: 'UTA', score: 2 }, awayTeam: { abbrev: 'NYR', score: 4 } },
+    { id: 12, gameDate: '2026-10-12', gameState: 'OFF', homeTeam: { abbrev: 'BOS', score: 6 }, awayTeam: { abbrev: 'UTA', score: 1 } },
+    { id: 13, gameDate: '2026-10-14', gameState: 'OFF', homeTeam: { abbrev: 'UTA', score: 5 }, awayTeam: { abbrev: 'NJD', score: 3 } },
+    { id: 14, gameDate: '2026-10-16', gameState: 'FUT', homeTeam: { abbrev: 'UTA' }, awayTeam: { abbrev: 'BUF' } },
+  ] });
+  const log = [{ gameId: 13, team: 'UTA', date: '2026-10-14', pts: 100 }, { gameId: 11, team: 'UTA', date: '2026-10-10', pts: 22 }];
+  const all = nhl.addMissedGames(log, 'UTA', res);
+  assert.deepEqual(all.map((g) => [g.gameId, !!g.missed]), [[13, false], [12, true], [11, false]]); // newest first, future game left out
+  const m = all[1];
+  assert.equal(m.opp, 'BOS');
+  assert.equal(m.home, false);
+  assert.deepEqual(m.result, { own: 1, opp: 6, win: false, ot: false });
+  // after a trade: no crosses before his first game for the new team
+  const traded = nhl.addMissedGames([{ gameId: 13, team: 'UTA', date: '2026-10-14' }, { gameId: 9, team: 'COL', date: '2026-10-08' }], 'UTA', res);
+  assert.ok(!traded.some((g) => g.missed));
+});
