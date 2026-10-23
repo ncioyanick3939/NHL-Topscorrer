@@ -634,3 +634,18 @@ test('season blocked shots and faceoffs from the NHL stats API replace the count
   assert.equal(d.extraSeason, true);
   assert.equal(db.prepare('SELECT fo_won FROM players WHERE id = 8495001').get().fo_won, 142);
 });
+
+test('app files are loaded with their version in the URL, so phones never keep old code', async () => {
+  await new Promise((r) => server.listen(0, r)); // an earlier test closed it
+  const base = `http://localhost:${server.address().port}`;
+  const res = await fetch(`${base}/`);
+  assert.equal(res.headers.get('cache-control'), 'no-store');
+  const html = await res.text();
+  const app = html.match(/\/app\.js\?v=([0-9a-f]+)/)?.[0];
+  assert.ok(app && /\/style\.css\?v=[0-9a-f]+/.test(html));
+  const js = await fetch(`${base}${app}`);
+  assert.match(js.headers.get('cache-control'), /immutable/);
+  assert.match(await js.text(), /\.\/fx\.js\?v=[0-9a-f]+/);
+  assert.equal((await fetch(`${base}/app.js?v=old`)).headers.get('cache-control'), 'no-store');
+  server.close();
+});

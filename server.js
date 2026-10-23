@@ -3,7 +3,7 @@ dns.setDefaultResultOrder('ipv4first'); // Codespaces: IPv6 to the NHL times out
 import { createServer } from 'node:http';
 import { readFile, mkdir, writeFile, stat } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, createHash } from 'node:crypto';
 import { extname, join } from 'node:path';
 import * as game from './game.js';
 import { getMeta } from './db.js';
@@ -155,11 +155,35 @@ async function api(req, res, url) {
 const STATIC = { '/': 'index.html', '/index.html': 'index.html', '/style.css': 'style.css', '/app.js': 'app.js', '/fx.js': 'fx.js',
   '/manifest.webmanifest': 'manifest.webmanifest', '/icon-192.png': 'icon-192.png', '/icon-512.png': 'icon-512.png', '/apple-touch-icon.png': 'apple-touch-icon.png', '/nhl-logo.png': 'nhl-logo.png' };
 
+/*
+ * Every app file gets its content hash in the URL (/app.js?v=ab12cd34). A new version has a new URL, so phones
+ * cannot keep running old code from their cache, also not the iPhone home-screen app. index.html is never cached.
+ */
+const CODE = { '/app.js': 'app.js', '/style.css': 'style.css', '/fx.js': 'fx.js' };
+const hashes = Object.fromEntries(Object.entries(CODE).map(([path, f]) => {
+  try { return [path, createHash('sha256').update(readFileSync(join(ROOT, f))).digest('hex').slice(0, 10)]; } catch { return [path, '0']; }
+}));
+// app.js contains the fx.js version, so its own version is taken after that is filled in
+const versioned = (text) => text
+  .replace(/(["'])\/(app\.js|style\.css)\1/g, (m, q, f) => `${q}/${f}?v=${hashes['/' + f]}${q}`)
+  .replace(/(["'])\.\/fx\.js\1/g, (m, q) => `${q}./fx.js?v=${hashes['/fx.js']}${q}`);
+try { hashes['/app.js'] = createHash('sha256').update(versioned(readFileSync(join(ROOT, 'app.js'), 'utf8'))).digest('hex').slice(0, 10); } catch { /* keep */ }
+
 async function serveStatic(req, res, url) {
   const name = STATIC[url.pathname];
   const file = name && join(ROOT, name);
   try {
     if (!file) throw new Error('not public');
+    if (name === 'index.html' || name === 'app.js') {
+      const text = versioned(await readFile(file, 'utf8'));
+      const sure = name === 'app.js' && url.searchParams.get('v') === hashes['/app.js'];
+      res.writeHead(200, { 'Content-Type': TYPES[extname(file)], 'Cache-Control': sure ? 'public, max-age=31536000, immutable' : 'no-store' });
+      return res.end(text);
+    }
+    if (CODE[url.pathname] && url.searchParams.get('v') === hashes[url.pathname]) {
+      res.writeHead(200, { 'Content-Type': TYPES[extname(file)], 'Cache-Control': 'public, max-age=31536000, immutable' });
+      return res.end(await readFile(file));
+    }
     // ETag: the browser keeps its copy and only asks "changed?" (saves traffic on small free servers)
     const st = await stat(file);
     const etag = `"${st.size.toString(36)}-${Math.floor(st.mtimeMs).toString(36)}"`;
