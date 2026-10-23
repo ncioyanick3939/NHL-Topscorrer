@@ -306,19 +306,6 @@ function dataStamp() {
   return `<div class="stamp ok"><i></i>NHL-Daten aktualisiert vor ${ago(new Date(d.updatedAt).toISOString())}</div>`;
 }
 
-/** My place in the league: rank, leader, gap. A tap opens the table. */
-function standingHtml(lg) {
-  const i = lg.findIndex((r) => r.me);
-  if (i < 0 || !lg.length) return '';
-  const me = lg[i], lead = lg[0];
-  const gap = i === 0
-    ? (lg[1] ? `Du führst mit <b>${fmt(me.points - lg[1].points)}</b> Punkten Vorsprung` : 'Du bist allein in der Liga')
-    : `<b>${fmt(lead.points - me.points)}</b> Punkte hinter ${esc(lead.name)}`;
-  return `<section class="standing" data-goto="league:rank" role="button" tabindex="0">
-    <div class="srank"><b>${i + 1}.</b><small>von ${lg.length}</small></div>
-    <div class="grow"><small>Spitze</small><div class="slead">${esc(lead.name)} <span>${fmt(lead.points)} Pkt.</span></div><div class="sgap">${gap}</div></div>
-    <span class="chev" aria-hidden="true">›</span></section>`;
-}
 /** The latest finished NHL games, newest first. */
 function resultsHtml(games) {
   const done = (games || []).filter((g) => g.state === 'FINAL' || g.state === 'OFF').sort((a, b) => String(b.start).localeCompare(String(a.start))).slice(0, 4);
@@ -384,7 +371,7 @@ function tickCountdown() {
 
 const views = {
   async board() {
-    const [team, moves, live, trend, lg, tops] = await Promise.all([api('/api/team'), api('/api/moves'), api('/api/live'), api('/api/trend'), api('/api/league'), api('/api/topscorers').catch(() => [])]);
+    const [team, moves, live, trend, tops] = await Promise.all([api('/api/team'), api('/api/moves'), api('/api/live'), api('/api/trend'), api('/api/topscorers').catch(() => [])]);
     S.games = S.games || live.games; // so a tap on a result opens the game sheet
     const gain = team.value - team.invested;
     const gc = gain > 0 ? 'up' : gain < 0 ? 'down' : 'flat';
@@ -393,7 +380,6 @@ const views = {
     return `<section class="hero"><div class="lbl">Teamwert</div><div class="big" data-count="${team.value}" data-count-key="teamvalue">${fmt(team.value)}</div>
       <span class="pill ${gc}">${gain ? `${arrow(gc)} ${gain > 0 ? '+' : '−'}${fmt(Math.abs(gain))} seit Kauf` : 'Unverändert seit Kauf'}</span></section>
       <div class="tiles"><div class="tile"><b>${S.me.rank}.</b><span>Rang</span></div><div class="tile"><b>${fmt(team.points + live.myPoints)}</b><span>Punkte</span></div><div class="tile"><b>${money(team.balance)}</b><span>Konto</span></div></div>${dataStamp()}
-      ${standingHtml(lg)}
       ${resultsHtml(live.games)}
       ${tops.length ? `<h2>NHL-Topscorer <small>Fantasy-Punkte der Saison</small></h2>${tops.slice(0, 3).map((p, i) => `<div class="mv" data-open="${p.id}"><span><b class="tsn">${i + 1}.</b> ${esc(p.first[0] || '')}. ${esc(p.last)} <small>${esc(p.team)}</small></span><b>${fmt(p.points)}</b></div>`).join('')}<button class="link more" data-goto="nhl:top">Alle Topscorer</button>` : ''}
       <h2>Markt <small>geht er hoch oder runter?</small></h2>${trendHtml(trend, true)}
