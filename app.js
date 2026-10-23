@@ -289,7 +289,42 @@ const medal = (i) => (i < 3 ? ` m${i + 1}` : '');
 const subtabs = (key, items) => `<div class="subtabs">${items.map(([v, l]) => `<button data-sub="${key}:${v}" aria-selected="${S.sub[key] === v}">${l}</button>`).join('')}</div>`;
 const seg = (attr, cur, items) => `<div class="seg">${items.map(([v, l]) => `<button data-${attr}="${v}" aria-pressed="${cur === v}">${l}</button>`).join('')}</div>`;
 const TEAMTABS = () => subtabs('team', [['market', 'Transfermarkt'], ['roster', 'Kader'], ['lineup', 'Aufstellung']]);
-const RINK = '<svg class="rink" viewBox="0 0 360 560" preserveAspectRatio="none" aria-hidden="true"><rect x="3" y="3" width="354" height="554" rx="46" fill="none" stroke="#fff" stroke-opacity=".16" stroke-width="3"/><line x1="4" y1="16" x2="356" y2="16" stroke="#e5384f" stroke-opacity=".6" stroke-width="4"/><circle cx="180" cy="16" r="54" fill="none" stroke="#3d7bff" stroke-opacity=".5" stroke-width="3"/><line x1="4" y1="268" x2="356" y2="268" stroke="#3d7bff" stroke-opacity=".5" stroke-width="6"/><line x1="4" y1="540" x2="356" y2="540" stroke="#e5384f" stroke-opacity=".6" stroke-width="3"/><path d="M146 540a34 34 0 0168 0z" fill="#3d7bff" fill-opacity=".25" stroke="#3d7bff" stroke-opacity=".6" stroke-width="2"/></svg>';
+/* Rink like Topscorers: the neutral zone with the centre circle on top, the defending zone with two faceoff circles and the crease below. */
+const RINK = `<svg class="rink" viewBox="0 0 360 620" preserveAspectRatio="none" aria-hidden="true">
+  <path d="M2 2H358V540Q358 618 280 618H80Q2 618 2 540Z" fill="none" stroke="#fff" stroke-opacity=".14" stroke-width="2.5"/>
+  <line x1="2" y1="44" x2="358" y2="44" stroke="#e5384f" stroke-opacity=".45" stroke-width="3"/>
+  <circle cx="180" cy="170" r="62" fill="none" stroke="#fff" stroke-opacity=".12" stroke-width="2"/>
+  <circle cx="180" cy="170" r="3.5" fill="#fff" fill-opacity=".2"/>
+  <circle cx="58" cy="72" r="5" fill="#fff" fill-opacity=".14"/><circle cx="302" cy="72" r="5" fill="#fff" fill-opacity=".14"/>
+  <line x1="2" y1="300" x2="358" y2="300" stroke="#3d7bff" stroke-opacity=".45" stroke-width="5"/>
+  <g stroke="#fff" stroke-opacity=".12" stroke-width="2" fill="none">
+    <circle cx="90" cy="470" r="54"/><circle cx="270" cy="470" r="54"/>
+    <path d="M78 456v-12M102 456v-12M78 484v12M102 484v12M66 464h-14M66 476h-14M114 464h14M114 476h14"/>
+    <path d="M258 456v-12M282 456v-12M258 484v12M282 484v12M246 464h-14M246 476h-14M294 464h14M294 476h14"/>
+  </g>
+  <circle cx="90" cy="470" r="5" fill="#fff" fill-opacity=".14"/><circle cx="270" cy="470" r="5" fill="#fff" fill-opacity=".14"/>
+  <line x1="12" y1="566" x2="348" y2="566" stroke="#e5384f" stroke-opacity=".4" stroke-width="2.5"/>
+  <path d="M150 566a30 30 0 0160 0z" fill="#3d7bff" fill-opacity=".18" stroke="#3d7bff" stroke-opacity=".45" stroke-width="2"/>
+</svg>`;
+const SLOT_AT = { F: ['c', 'lw', 'rw'], D: ['ld', 'rd'], G: ['g'] };
+/**
+ * The lineup of one line as a formation on the rink: centre on top, wingers lower left and right, the two defencemen,
+ * the goalie at the bottom. edit: slots open the "Spieler wechseln" sheet; otherwise they open the player.
+ */
+function rinkHtml(players, line, edit) {
+  const slot = (pos, ln, i) => {
+    const p = players.filter((x) => x.pos === pos && x.lineup === ln)[i];
+    const at = SLOT_AT[pos][i];
+    if (!p) {
+      const attr = edit ? `data-add="${pos}:${ln}"` : '';
+      return `<${edit ? 'button' : 'div'} class="slot empty s-${at}" ${attr}><span class="plusc">${edit ? '+' : ''}</span><span class="sp">${POS[pos]}</span><span class="sn">−50 Pkt.</span></${edit ? 'button' : 'div'}>`;
+    }
+    const attr = edit ? `data-slot="${p.id}"` : `data-open="${p.id}"`;
+    return `<button class="slot s-${at}" ${attr} aria-label="${esc(p.first + ' ' + p.last)}">${avatar(p)}${p.injury || p.missedLast ? '<i class="sx">!</i>' : ''}
+      <span class="sp">${logo(p.team)}${POS[p.pos]}</span><span class="sn">${esc(p.last)}</span></button>`;
+  };
+  return `<div class="ice">${RINK}${slot('F', line, 0)}${slot('F', line, 1)}${slot('F', line, 2)}${slot('D', line, 0)}${slot('D', line, 1)}${slot('G', 9, 0)}</div>`;
+}
 const MODES = [['buy', 'Bieten'], ['sell', 'Verkaufen'], ['mine', 'Meine']];
 const dayLong = (iso) => new Date(iso).toLocaleDateString('de-CH', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Europe/Zurich' });
 
@@ -329,20 +364,12 @@ const views = {
     const t = await api('/api/team');
     S.team = t;
     if (S.sub.team === 'lineup') {
-      const inL = (pos, line) => t.players.filter((p) => p.pos === pos && p.lineup === line);
-      const slot = (pos, line, i) => {
-        const p = inL(pos, line)[i];
-        const posName = { F: 'Stürmer', D: 'Verteidiger', G: 'Torhüter' }[pos];
-        return p
-          ? `<button class="slot" data-slot="${p.id}" aria-label="${esc(p.first + ' ' + p.last)}">${avatar(p)}<span class="sn">${esc(p.last)}</span><span class="sv">${fmt(p.price / 1000)}k</span>${p.injury ? '<i class="sx">!</i>' : ''}</button>`
-          : `<button class="slot empty" data-add="${pos}:${line}"><span class="plusc">+</span><span class="sn">${posName}</span></button>`;
-      };
       const L = S.line;
       const placed = t.players.filter((p) => p.lineup > 0).length;
       const bench = t.players.filter((p) => p.lineup === 0);
       return `${head}<div class="balbar"><span>Aufstellung<b>${placed}/16</b></span><span>Bank<b>${bench.length}</b></span></div>
-        <div class="floatseg">${seg('line', String(L), [['1', '1. Linie'], ['2', '2. Linie'], ['3', '3. Linie']])}</div>
-        <div class="ice">${RINK}<div class="lrow">${slot('F', L, 0)}</div><div class="lrow">${slot('F', L, 1)}${slot('F', L, 2)}</div><div class="lrow">${slot('D', L, 0)}${slot('D', L, 1)}</div><div class="lrow g">${slot('G', 9, 0)}</div></div>
+        ${rinkHtml(t.players, L, true)}
+        <div class="floatseg lineseg">${seg('line', String(L), [['1', '1. Linie'], ['2', '2. Linie'], ['3', '3. Linie']])}</div>
         ${bench.length ? `<div class="grp">Bank</div>${bench.map((p) => prow(p)).join('')}` : ''}
         <div class="note">Nur Spieler in der Aufstellung bringen Punkte. Tippe auf ein Feld, um einen Spieler einzusetzen oder auf die Bank zu setzen. Spieler, deren Team heute spielt, sind gesperrt.</div>`;
     }
@@ -506,14 +533,8 @@ async function managerSheet(id) {
   let line = 1;
   const placed = m.players.filter((p) => p.lineup > 0).length;
   const bench = m.players.filter((p) => p.lineup === 0);
-  const slot = (pos, ln, i) => {
-    const p = m.players.filter((x) => x.pos === pos && x.lineup === ln)[i];
-    const posName = { F: 'Stürmer', D: 'Verteidiger', G: 'Torhüter' }[pos];
-    return p ? `<button class="slot" data-open="${p.id}" aria-label="${esc(p.first + ' ' + p.last)}">${avatar(p)}<span class="sn">${esc(p.last)}</span>${p.injury ? '<i class="sx">!</i>' : ''}</button>`
-      : `<div class="slot empty"><span class="plusc"></span><span class="sn">${posName}</span></div>`;
-  };
-  const body = () => `<div class="seg mseg">${[1, 2, 3].map((n) => `<button data-mline="${n}" aria-selected="${n === line}">${n}. Linie</button>`).join('')}</div>
-    <div class="ice">${RINK}<div class="lrow">${slot('F', line, 0)}</div><div class="lrow">${slot('F', line, 1)}${slot('F', line, 2)}</div><div class="lrow">${slot('D', line, 0)}${slot('D', line, 1)}</div><div class="lrow g">${slot('G', 9, 0)}</div></div>
+  const body = () => `${rinkHtml(m.players, line, false)}
+    <div class="seg mseg">${[1, 2, 3].map((n) => `<button data-mline="${n}" aria-selected="${n === line}">${n}. Linie</button>`).join('')}</div>
     ${bench.length ? `<div class="grp">Bank</div>${bench.map((p) => prow(p)).join('')}` : ''}`;
   const bg = openSheet(`<div class="shead"><div class="sname">${esc(m.name)}</div><div class="ptag">${placed}/16 in der Aufstellung · ${m.count} Spieler</div></div>
     <div class="big3 small"><div><b>${fmt(m.points)}</b><span>Punkte</span></div><div><b class="${m.live > 0 ? 'up' : ''}">${m.live > 0 ? '+' : ''}${m.live}</b><span>Heute</span></div><div><b>${money(m.value)}</b><span>Teamwert</span></div></div>

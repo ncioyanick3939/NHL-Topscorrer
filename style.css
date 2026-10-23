@@ -568,3 +568,20 @@ main.static>*{animation:none}
 .crow.unset b{color:var(--down);font:700 22px var(--f-display);text-transform:uppercase}
 .crow.unset.cur{background:linear-gradient(90deg,rgba(255,107,94,.12),transparent 70%);border-bottom-color:rgba(255,107,94,.35)}
 .cminus{width:52px;height:52px;border-radius:50%;border:2px solid var(--down);color:var(--down);display:grid;place-items:center;font:700 10px var(--f-body);text-align:center;line-height:1.1}
+
+/* lineup formation on the rink (like Topscorers) */
+.ice{display:block;position:relative;height:auto;aspect-ratio:360/620;padding:0;gap:0;align-content:normal;margin-top:12px;border-radius:30px 30px 46% 46% / 30px 30px 14% 14%;
+  background:radial-gradient(70% 40% at 50% 28%,rgba(61,123,255,.16),transparent 70%),linear-gradient(180deg,#1e3461,#162644 70%,#14223e)}
+.ice .slot{position:absolute;transform:translateX(-50%);width:112px;gap:2px;z-index:1}
+.ice .slot .av{width:76px;height:76px;font-size:26px;margin-bottom:4px;box-shadow:0 0 0 3px rgba(255,255,255,.9),0 10px 22px rgba(0,0,0,.45)}
+.ice .slot .av i{display:none}
+.ice .slot .sx{right:14px;top:-2px}
+.ice .slot .sp{display:flex;align-items:center;justify-content:center;gap:5px;font:600 10px var(--f-body);letter-spacing:.12em;text-transform:uppercase;color:var(--mute);white-space:nowrap}
+.ice .slot .sp img{width:16px;height:16px}
+.ice .slot .sn{font:700 16px var(--f-display);letter-spacing:.04em;background:none;padding:0;text-shadow:0 2px 6px rgba(0,0,0,.6);max-width:112px}
+.ice .slot.empty .plusc{width:76px;height:76px;margin-bottom:4px;font-size:30px}
+.ice .slot.empty .sn{font:700 12px var(--f-body);color:var(--down);letter-spacing:.04em}
+.s-c{left:50%;top:3%}.s-lw{left:18%;top:21%}.s-rw{left:82%;top:21%}
+.s-ld{left:31%;top:47%}.s-rd{left:69%;top:47%}.s-g{left:50%;top:72%}
+.lineseg{margin-top:14px}
+@media (max-width:360px){.ice .slot{width:96px}.ice .slot .av,.ice .slot.empty .plusc{width:66px;height:66px}.s-lw{left:20%}.s-rw{left:80%}}
