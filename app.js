@@ -233,7 +233,15 @@ function gamesHtml(log, err, d) {
     const score = r ? (g.home ? `${r.own}:${r.opp}` : `${r.opp}:${r.own}`) : '';
     return `<div class="gcol"><div class="gbar"><i class="${hot ? 'hot' : ''}${g.pts < 0 ? ' neg' : ''}" style="height:${h}px"></i></div><b>${g.pts}</b><div class="glogos">${logo(left)}${logo(right)}</div><small>${score}</small></div>`;
   }).join('');
-  return `<div class="gwrap"><div class="gcols" data-scrollend>${cols}</div><div class="season"><span>Saison ${seasonLabel}</span><b>${fmt(d.points)}</b><small>Punkte</small><b>${avg(d)}</b><small>Ø</small><b>${d.games}</b><small>Spiele</small></div></div>`;
+  return `<div class="gwrap"><div class="gcols" data-scrollend>${cols}</div><div class="season"><span>Saison ${seasonLabel}</span><b>${fmt(d.points)}</b><small>Punkte</small><b>${avg(d)}</b><small>Ø</small><b>${d.games}</b><small>Spiele</small></div></div>${seasonNote(d)}`;
+}
+/** How the season points were made: exact for games the app followed live, estimated before that. */
+function seasonNote(d) {
+  if (!d.games) return '';
+  const txt = d.seasonExact >= d.games ? 'Alle Saisonpunkte exakt nach den Spielregeln.'
+    : d.seasonExact ? `${d.seasonExact} von ${d.games} Spielen exakt, die übrigen aus der NHL-Saisonstatistik geschätzt.`
+      : 'Saisonpunkte aus der NHL-Saisonstatistik geschätzt (exakt ab dem ersten Spiel, das die App live verfolgt).';
+  return `<div class="snote">${txt}</div>`;
 }
 function gamesListHtml(log) {
   if (!log || !log.length) return '';
@@ -284,6 +292,18 @@ function trendHtml(t, full) {
   const movers = (list, label) => (list.length ? `<div class="grp">${label}</div>${list.map((p) => `<div class="mv" data-open="${p.id}"><span>${esc(p.first[0] || '')}. ${esc(p.last)} <small>${esc(p.team)}</small></span><b class="${clsOf(p.delta)}">${p.delta > 0 ? '+' : '−'}${fmt(Math.abs(p.delta))}</b></div>`).join('')}` : '');
   const head = `<div class="trend">${big('Markt gestern', t.last.pct, `${t.last.delta >= 0 ? '+' : '−'}${fmt(Math.abs(t.last.delta))} Gesamtwert`)}${big('Prognose heute', t.forecast.pct, 'aus den Live-Punkten')}${big('Transfermarkt', t.listed.pct, 'Ø der Angebote')}</div>`;
   return full ? head + movers(t.liveRisers, 'Steiger heute (live)') + movers(t.liveFallers, 'Absteiger heute (live)') + movers(t.risers, 'Gewinner letzter Tag') + movers(t.fallers, 'Verlierer letzter Tag') : head;
+}
+
+/** Where the numbers come from and how fresh they are; a clear note when the NHL does not answer. */
+function dataStamp() {
+  const d = S.me?.data;
+  if (!d) return '';
+  const time = (ms) => new Date(ms).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Zurich' });
+  if (d.error && d.error.at > (d.updatedAt || 0)) {
+    return `<div class="stamp bad" title="${esc(d.error.msg)}"><i></i>Die NHL antwortet gerade nicht. ${d.updatedAt ? `Daten von ${time(d.updatedAt)} Uhr.` : 'Noch keine Daten geladen.'}</div>`;
+  }
+  if (!d.updatedAt) return '<div class="stamp"><i></i>NHL-Daten werden geladen …</div>';
+  return `<div class="stamp ok"><i></i>NHL-Daten aktualisiert vor ${ago(new Date(d.updatedAt).toISOString())}</div>`;
 }
 
 /* ---------- views ---------- */
@@ -351,7 +371,7 @@ const views = {
     const running = live.games.filter((g) => g.state === 'LIVE' || g.state === 'CRIT').length;
     return `<section class="hero"><div class="lbl">Teamwert</div><div class="big" data-count="${team.value}" data-count-key="teamvalue">${fmt(team.value)}</div>
       <span class="pill ${gc}">${gain ? `${arrow(gc)} ${gain > 0 ? '+' : '−'}${fmt(Math.abs(gain))} seit Kauf` : 'Unverändert seit Kauf'}</span></section>
-      <div class="tiles"><div class="tile"><b>${S.me.rank}.</b><span>Rang</span></div><div class="tile"><b>${fmt(team.points + live.myPoints)}</b><span>Punkte</span></div><div class="tile"><b>${money(team.balance)}</b><span>Konto</span></div></div>
+      <div class="tiles"><div class="tile"><b>${S.me.rank}.</b><span>Rang</span></div><div class="tile"><b>${fmt(team.points + live.myPoints)}</b><span>Punkte</span></div><div class="tile"><b>${money(team.balance)}</b><span>Konto</span></div></div>${dataStamp()}
       <h2>Markt <small>geht er hoch oder runter?</small></h2>${trendHtml(trend, true)}
       <h2>Heute <small>${running ? running + ' Spiele laufen' : 'kein Spiel läuft'}</small></h2>
       ${live.mine.length ? live.mine.slice(0, 3).map((r) => `<div class="card" data-open="${r.id}"><div class="row"><div class="grow"><div class="pname"><span>${esc(r.team)}</span>${esc(r.name)}</div></div><div class="price"><b>${r.pts > 0 ? '+' : ''}${r.pts}</b><span class="pill flat">morgen ca. ${fmt(r.tomorrow)}</span></div></div></div>`).join('') : '<div class="empty">Heute noch keine Punkte für dein Team.</div>'}
@@ -430,7 +450,7 @@ const views = {
     const dayRank = [...lg].sort((x, y) => y.live - x.live || y.points - x.points).findIndex((r) => r.me) + 1;
     const hero = running || d.myPoints ? `<section class="livehero${running ? ' on' : ''}"><div class="lbl">${running ? '<i></i>Live · ' + nRunning + (nRunning === 1 ? ' Spiel läuft' : ' Spiele laufen') : 'Heute'}</div>
       <div class="big ${d.myPoints < 0 ? 'down' : ''}" data-count="${d.myPoints}" data-fmt="sign" data-count-key="livepts">${d.myPoints > 0 ? '+' : ''}${fmt(d.myPoints)}</div><div class="sub">Punkte deiner Aufstellung${dayRank ? ` · <b>${dayRank}.</b> heute in der Liga` : ''}</div></section>` : '';
-    const top = hero + (running ? '' : countdown(d.nextStart));
+    const top = hero + (running ? '' : countdown(d.nextStart)) + dataStamp();
     if (S.sub.live === 'league') {
       const board = [...lg].sort((x, y) => y.live - x.live || y.points - x.points);
       return `${head}${top}<div class="rhead"><span>Gesamt</span><span>Heute</span></div>

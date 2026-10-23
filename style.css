@@ -605,3 +605,9 @@ main.static>*{animation:none}
 .top .logo{cursor:pointer;-webkit-user-select:none;user-select:none}
 .top .logo:active .shield{transform:scale(.92) rotate(-6deg)}
 .top .logo .shield{transition:transform .15s var(--ease)}
+.snote{font-size:11px;color:var(--mute);text-align:center;margin:-6px 0 12px;line-height:1.4}
+.stamp{display:flex;align-items:center;justify-content:center;gap:7px;margin:12px 0 0;font-size:11px;color:var(--mute);letter-spacing:.02em}
+.stamp i{width:7px;height:7px;border-radius:50%;background:var(--mute)}
+.stamp.ok i{background:var(--up)}
+.stamp.bad{color:var(--down);background:var(--down-bg);border:1px solid rgba(255,107,94,.3);border-radius:10px;padding:8px 12px;font-size:12px}
+.stamp.bad i{background:var(--down)}
