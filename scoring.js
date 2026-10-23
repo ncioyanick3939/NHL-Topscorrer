@@ -81,7 +81,11 @@ export function summarize(s) {
   return parts.join(', ') || 'kein Punkt';
 }
 
-/** Fantasy points of a whole season from NHL season totals (rough: used for start prices only). */
+/**
+ * Fantasy points of a whole season estimated from NHL season totals. The NHL table has no faceoffs, missed or
+ * blocked shots and no team results per skater, so this stays an estimate; games the app followed live are exact
+ * (see applySeasonStats).
+ */
 export function seasonPoints(t) {
   const c = SCORING;
   const pos = t.pos === 'D' || t.pos === 'G' ? t.pos : 'F';
@@ -89,5 +93,7 @@ export function seasonPoints(t) {
     (t.goals || 0) * c.goal[pos] + (t.assists || 0) * c.assist[pos] + (t.shots || 0) * c.shot +
     (t.plus_minus || 0) * c.plusMinus + (t.saves || 0) * c.save + (t.goals_against || 0) * c.goalAgainst +
     (t.wins || 0) * c.win + (t.shutouts || 0) * c.shutout + (t.games || 0) * c.lineup +
-    (t.pim || 0) * (c.penalty2 / 2));
+    (t.pim || 0) * (c.penalty2 / 2) +
+    (t.pp_goals || 0) * c.powerplayGoal + (t.sh_goals || 0) * c.shGoal + (t.gwg || 0) * c.gwg +
+    (t.toi_min || 0) * c.timeOnIce + (t.goalie_time || 0) * c.goalieTime);
 }

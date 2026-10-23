@@ -6,6 +6,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { extname, join } from 'node:path';
 import * as game from './game.js';
+import { getMeta } from './db.js';
 import { SCORING, PRICE, RULES } from './config.js';
 import { startScheduler, getGameLog, getGameEvents, lastLogError } from './nhl.js';
 
@@ -98,7 +99,10 @@ async function api(req, res, url) {
       game.ensureStarterTeam(user.id); // accounts made before the starter team existed get it now
       const team = game.myTeam(user.id);
       const rank = game.league(user.id).findIndex((r) => r.me) + 1;
-      return send(res, 200, { name: user.name, balance: team.balance, value: team.value, points: team.points, rank, count: team.players.length, invite: INVITE });
+      let error = null;
+      try { error = JSON.parse(getMeta('last_update_error') || 'null'); } catch { /* old value */ }
+      const data = { updatedAt: Number(getMeta('last_update_ok')) || null, error };
+      return send(res, 200, { name: user.name, balance: team.balance, value: team.value, points: team.points, rank, count: team.players.length, invite: INVITE, data });
     }
     case 'GET /api/players':
       return send(res, 200, game.listPlayers(user.id, { pos: q.get('pos'), q: q.get('q'), sort: q.get('sort'), limit: q.get('limit') }));

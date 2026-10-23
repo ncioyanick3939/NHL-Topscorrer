@@ -228,12 +228,17 @@ export function parseBoxscore(json) {
 export function parseClubStats(json) {
   const out = [];
   for (const s of json.skaters ?? []) {
+    const avgToi = Number(s.avgTimeOnIcePerGame); // seconds per game
     out.push({ id: s.playerId, pos: s.positionCode === 'D' ? 'D' : 'F', games: s.gamesPlayed ?? 0, goals: s.goals ?? 0, assists: s.assists ?? 0,
-      plus_minus: s.plusMinus ?? 0, shots: s.shots ?? 0, pim: s.penaltyMinutes ?? 0, wins: 0, saves: 0, goals_against: 0, shutouts: 0 });
+      plus_minus: s.plusMinus ?? 0, shots: s.shots ?? 0, pim: s.penaltyMinutes ?? 0, wins: 0, saves: 0, goals_against: 0, shutouts: 0,
+      pp_goals: s.powerPlayGoals ?? 0, sh_goals: s.shorthandedGoals ?? 0, gwg: s.gameWinningGoals ?? 0,
+      toi_min: Number.isFinite(avgToi) ? Math.round((avgToi * (s.gamesPlayed ?? 0)) / 60) : 0 });
   }
   for (const g of json.goalies ?? []) {
+    const toi = Number(g.timeOnIce); // seconds in the season
     out.push({ id: g.playerId, pos: 'G', games: g.gamesPlayed ?? 0, goals: 0, assists: 0, plus_minus: 0, shots: 0, pim: 0,
-      wins: g.wins ?? 0, saves: g.saves ?? 0, goals_against: g.goalsAgainst ?? 0, shutouts: g.shutouts ?? 0 });
+      wins: g.wins ?? 0, saves: g.saves ?? 0, goals_against: g.goalsAgainst ?? 0, shutouts: g.shutouts ?? 0,
+      goalie_time: Number.isFinite(toi) ? Math.floor(toi / 600) : 0 });
   }
   return out;
 }
@@ -247,10 +252,12 @@ export function parseGameLog(json, limit = 100, pos = 'F') {
       const saves = Math.max(0, (g.shotsAgainst ?? 0) - (g.goalsAgainst ?? 0));
       const win = g.decision === 'W' ? 1 : 0;
       const shutout = (g.goalsAgainst ?? 0) === 0 && (g.shotsAgainst ?? 0) > 0 && toiSeconds(g.toi) >= 3540 ? 1 : 0;
-      pts = statsToPoints({ pos: 'G', saves, goals_against: g.goalsAgainst ?? 0, win, shutout, dressed: 1, goals: g.goals, assists: g.assists });
+      pts = statsToPoints({ pos: 'G', saves, goals_against: g.goalsAgainst ?? 0, win, shutout, dressed: 1, goals: g.goals, assists: g.assists,
+        goalie_time: Math.floor(toiSeconds(g.toi) / 600) });
       text = `${saves} Paraden, ${g.goalsAgainst ?? 0} Gegentore${win ? ', Sieg' : ''}`;
     } else {
-      pts = statsToPoints({ pos, goals: g.goals, assists: g.assists, shots: g.shots, pim: g.pim, plus_minus: g.plusMinus, pp_goals: g.powerPlayGoals, dressed: 1 });
+      pts = statsToPoints({ pos, goals: g.goals, assists: g.assists, shots: g.shots, pim: g.pim, plus_minus: g.plusMinus, pp_goals: g.powerPlayGoals,
+        sh_goals: g.shorthandedGoals, gwg: g.gameWinningGoals, toi_min: Math.floor(toiSeconds(g.toi) / 60), dressed: 1 });
       const bits = [];
       if (g.goals) bits.push(`${g.goals} ${g.goals === 1 ? 'Tor' : 'Tore'}`);
       if (g.assists) bits.push(`${g.assists} ${g.assists === 1 ? 'Assist' : 'Assists'}`);
@@ -405,6 +412,12 @@ export async function getGameLog(playerId) {
       try { byTeam.set(team, await seasonResults(team)); } catch { /* the result is optional */ }
     }
     addResults(data, byTeam);
+    // games the app followed live: the exact points, the same as in the live view and the day closing
+    const exact = db.prepare('SELECT pts FROM day_stats WHERE player_id = ? AND game_id = ?');
+    for (const g of data) {
+      const row = g.gameId != null ? exact.get(playerId, g.gameId) : null;
+      if (row) { g.pts = row.pts; g.exact = true; }
+    }
     logCache.set(playerId, { t: Date.now(), data });
     return data;
   } catch (e) {
@@ -417,10 +430,26 @@ export async function getGameLog(playerId) {
 export let lastLogError = '';
 
 /** Write season totals into the players table. Fantasy points are calculated from the totals. */
+/** Finished games of this season that the app followed live, with their exact points. */
+export function trackedSeason(playerId, now = new Date()) {
+  const start = `${seasonStrings(now).cur.slice(0, 4)}-09-01`;
+  return db.prepare(`SELECT COUNT(*) AS games, COALESCE(SUM(d.pts), 0) AS pts FROM day_stats d JOIN games g ON g.id = d.game_id
+    WHERE d.player_id = ? AND d.day >= ? AND g.state IN ('FINAL','OFF')`).get(playerId, start);
+}
+
+/**
+ * Season totals from the NHL. Fantasy points: exact for every game the app followed live (same points as the live
+ * view), the NHL-based estimate only for the share of games before that.
+ */
 export function applySeasonStats(list) {
   const upd = db.prepare(`UPDATE players SET games=?, goals=?, assists=?, plus_minus=?, shots=?, pim=?, wins=?, fantasy_pts=? WHERE id=?`);
   tx(() => {
-    for (const t of list) upd.run(t.games, t.goals, t.assists, t.plus_minus, t.shots, t.pim, t.wins, seasonPoints(t), t.id);
+    for (const t of list) {
+      const tracked = trackedSeason(t.id);
+      const known = Math.min(tracked.games, t.games);
+      const rest = t.games > 0 ? seasonPoints(t) * ((t.games - known) / t.games) : 0;
+      upd.run(t.games, t.goals, t.assists, t.plus_minus, t.shots, t.pim, t.wins, Math.round(tracked.pts + rest), t.id);
+    }
   });
   return list.length;
 }
@@ -662,8 +691,10 @@ export async function tick({ log = console.log } = {}) {
     const done = finalizeDueDays();
     if (done.length) log(`Tag abgeschlossen, Preise aktualisiert: ${done.join(', ')}`);
     if (done.length || Date.now() - Number(getMeta('last_stats_sync') || 0) > 3 * 3600 * 1000) await syncSeasonStats({ log });
+    setMeta('last_update_ok', Date.now()); // shown in the app as "NHL-Daten von hh:mm"
   } catch (e) {
     log(`Update fehlgeschlagen: ${e.message}`);
+    setMeta('last_update_error', JSON.stringify({ at: Date.now(), msg: String(e.cause?.code || e.message).slice(0, 120) }));
   }
   const running = db.prepare(`SELECT COUNT(*) AS n FROM games WHERE state IN ('LIVE','CRIT')`).get().n;
   const soon = db.prepare(`SELECT COUNT(*) AS n FROM games WHERE state IN ('FUT','PRE') AND start_utc IS NOT NULL

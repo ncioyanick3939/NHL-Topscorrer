@@ -4,6 +4,7 @@ import { db, tx } from './db.js';
 import { PRICE, RULES } from './config.js';
 import { LOCKED_SQL, logTransfer, cannotReceive, acceptOffer, dropBids } from './auction.js';
 import { nextPrice, pointsBreakdown } from './scoring.js';
+import { trackedSeason } from './nhl.js';
 import { refreshMarket } from './market.js';
 
 export class HttpError extends Error {
@@ -200,6 +201,7 @@ export function playerDetail(userId, id) {
   const own = db.prepare('SELECT bought_for FROM roster WHERE user_id = ? AND player_id = ?').get(userId, id);
   const full = db.prepare('SELECT shots, blocked, pim, plus_minus, wins FROM players WHERE id = ?').get(id);
   return { ...shape(p, ownedSet(userId)), myBid: myBids(userId).get(id) ?? null, ...full, plusMinus: full.plus_minus, boughtFor: own?.bought_for ?? null, log, live, transfers,
+    seasonExact: Math.min(trackedSeason(id).games, p.games),
     histFull: db.prepare('SELECT day, price FROM price_history WHERE player_id = ? ORDER BY day ASC LIMIT 120').all(id) };
 }
 

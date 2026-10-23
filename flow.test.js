@@ -12,7 +12,7 @@ process.env.INVITE_CODE = 'testcode';
 process.env.NO_STARTER = '1'; // most tests want an empty team; the starter-team test switches it on
 
 const { db } = await import('./db.js');
-const { statsToPoints, nextPrice } = await import('./scoring.js');
+const { statsToPoints, nextPrice, seasonPoints } = await import('./scoring.js');
 const nhl = await import('./nhl.js');
 const game = await import('./game.js');
 const market = await import('./market.js');
@@ -115,6 +115,11 @@ test('HTTP: login required, register with invite code, cookie session', async ()
   assert.match(reg.headers.get('set-cookie'), /HttpOnly/);
 
   const me = await (await fetch(`${base}/api/me`, { headers: { cookie } })).json();
+  assert.ok(me.data && 'updatedAt' in me.data && 'error' in me.data); // data freshness for the app
+  const { setMeta } = await import('./db.js');
+  setMeta('last_update_error', JSON.stringify({ at: 5, msg: 'ENOTFOUND' }));
+  const me2 = await (await fetch(`${base}/api/me`, { headers: { cookie } })).json();
+  assert.equal(me2.data.error.msg, 'ENOTFOUND');
   assert.equal(me.name, 'Anna');
   assert.equal(me.balance, 2_000_000);
   const { db: tdb } = await import('./db.js');
@@ -234,14 +239,28 @@ test('season stats come from the NHL table, not from days counted since the app 
   nhl.applySeasonStats(list);
   const h = db.prepare('SELECT games, goals, assists, plus_minus, shots, pim, fantasy_pts FROM players WHERE id=8480002').get();
   assert.deepEqual([h.games, h.goals, h.assists, h.plus_minus, h.shots, h.pim], [8, 4, 6, 3, 25, 2]);
-  assert.equal(h.fantasy_pts, 4 * 60 + 6 * 40 + 25 * 5 - 2 * 5 + 3 * 5 + 8 * 5); // 650
+  // Hischier: the app followed 1 of his 8 games live (exact points), the other 7/8 come from the NHL estimate (650)
+  const estimate = 4 * 60 + 6 * 40 + 25 * 5 - 2 * 5 + 3 * 5 + 8 * 5; // 650
+  const tracked = nhl.trackedSeason(8480002);
+  assert.equal(tracked.games, 1);
+  assert.equal(h.fantasy_pts, Math.round(tracked.pts + estimate * 7 / 8));
   const g = db.prepare('SELECT games, wins, fantasy_pts FROM players WHERE id=8480010').get();
   assert.deepEqual([g.games, g.wins], [6, 4]);
-  assert.equal(g.fantasy_pts, 150 * 4 - 12 * 15 + 4 * 15 + 40 + 6 * 5);
+  const gt = nhl.trackedSeason(8480010);
+  assert.equal(g.fantasy_pts, Math.round(gt.pts + (150 * 4 - 12 * 15 + 4 * 15 + 40 + 6 * 5) * (6 - gt.games) / 6));
   // a later game day being finalized must not overwrite the NHL totals
   const before = db.prepare('SELECT games FROM players WHERE id=8480002').get().games;
   nhl.finalizeDay('2099-01-01');
   assert.equal(db.prepare('SELECT games FROM players WHERE id=8480002').get().games, before);
+});
+
+test('season estimate uses ice time, PP/SH goals and winning goals when the NHL table has them', () => {
+  const [s] = nhl.parseClubStats({ skaters: [{ playerId: 8499001, positionCode: 'C', gamesPlayed: 10, goals: 5, assists: 5, plusMinus: 0, shots: 30,
+    penaltyMinutes: 0, powerPlayGoals: 2, shorthandedGoals: 1, gameWinningGoals: 1, avgTimeOnIcePerGame: 1080 }] });
+  assert.equal(s.toi_min, 180); // 18 minutes x 10 games
+  assert.equal(seasonPoints(s), 5 * 60 + 5 * 40 + 30 * 5 + 10 * 5 + 2 * 10 + 1 * 20 + 1 * 15 + 180);
+  const [g] = nhl.parseClubStats({ goalies: [{ playerId: 8499002, gamesPlayed: 2, wins: 1, saves: 50, goalsAgainst: 4, timeOnIce: 7200 }] });
+  assert.equal(g.goalie_time, 12);
 });
 
 test('game log: last games of a skater and a goalie in plain words', () => {
@@ -257,7 +276,7 @@ test('game log: last games of a skater and a goalie in plain words', () => {
   assert.equal(rows[1].home, false);
   assert.equal(rows[1].text, 'kein Punkt, -1, 1 Schüsse');
   assert.equal(rows[2].text, '28 Paraden, 2 Gegentore, Sieg');
-  assert.equal(rows[2].pts, 28 * 4 - 2 * 15 + 5);
+  assert.equal(rows[2].pts, 28 * 4 - 2 * 15 + 5 + 6); // + goalie time bonus for 60 minutes
 });
 
 test('"not in the last game" is never shown for goalies or when that game was not read', () => {
