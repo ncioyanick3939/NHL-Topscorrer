@@ -1,0 +1,14 @@
+# Render free puts the app to sleep after 15 minutes without visitors (waking up takes about a minute).
+# GitHub calls it every 5 minutes so it stays awake. Free for public repos.
+name: Keep awake
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Ping
+        run: curl -sS -o /dev/null -w "%{http_code}\n" -m 150 --retry 2 https://nhl-topscorer.onrender.com/healthz || true
