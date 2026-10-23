@@ -237,7 +237,7 @@ export function parseClubStats(json) {
   for (const g of json.goalies ?? []) {
     const toi = Number(g.timeOnIce); // seconds in the season
     out.push({ id: g.playerId, pos: 'G', games: g.gamesPlayed ?? 0, goals: 0, assists: 0, plus_minus: 0, shots: 0, pim: 0,
-      wins: g.wins ?? 0, saves: g.saves ?? 0, goals_against: g.goalsAgainst ?? 0, shutouts: g.shutouts ?? 0,
+      wins: g.wins ?? 0, saves: g.saves ?? Math.max(0, (g.shotsAgainst ?? 0) - (g.goalsAgainst ?? 0)), goals_against: g.goalsAgainst ?? 0, shutouts: g.shutouts ?? 0,
       goalie_time: Number.isFinite(toi) ? Math.floor(toi / 600) : 0 });
   }
   return out;
@@ -266,7 +266,8 @@ export function parseGameLog(json, limit = 100, pos = 'F') {
       bits.push(`${g.plusMinus > 0 ? '+' : ''}${g.plusMinus ?? 0}`, `${g.shots ?? 0} Schüsse`);
       text = bits.join(', ');
     }
-    return { gameId: g.gameId ?? null, team: g.teamAbbrev ?? null, date: g.gameDate, opp: g.opponentAbbrev, home: g.homeRoadFlag === 'H', text, pts, pos: goalie ? 'G' : pos, result: null };
+    return { gameId: g.gameId ?? null, team: g.teamAbbrev ?? null, date: g.gameDate, opp: g.opponentAbbrev, home: g.homeRoadFlag === 'H', text, pts, pos: goalie ? 'G' : pos, result: null,
+      ...(goalie ? { sa: g.shotsAgainst ?? 0, ga: g.goalsAgainst ?? 0 } : {}) };
   });
 }
 
@@ -719,7 +720,9 @@ export async function tick({ log = console.log } = {}) {
     refreshMarket();
     const done = finalizeDueDays();
     if (done.length) log(`Tag abgeschlossen, Preise aktualisiert: ${done.join(', ')}`);
-    if (done.length || Date.now() - Number(getMeta('last_stats_sync') || 0) > 3 * 3600 * 1000) await syncSeasonStats({ log });
+    const goalieGap = !!db.prepare("SELECT 1 FROM players WHERE pos = 'G' AND games > 0 AND saves = 0 AND goals_against = 0 LIMIT 1").get()
+      && Date.now() - Number(getMeta('last_stats_sync') || 0) > 30 * 60_000; // new goalie columns: fill them soon, not in 3 hours
+    if (done.length || goalieGap || Date.now() - Number(getMeta('last_stats_sync') || 0) > 3 * 3600 * 1000) await syncSeasonStats({ log });
     setMeta('last_update_ok', Date.now()); // shown in the app as "NHL-Daten von hh:mm"
   } catch (e) {
     log(`Update fehlgeschlagen: ${e.message}`);

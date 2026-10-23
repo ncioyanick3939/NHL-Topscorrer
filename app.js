@@ -190,7 +190,7 @@ async function openPlayer(id) {
     <div class="wmlogo">${logo(d.team)}</div><div class="shead">${logo(d.team)}<div class="sname">${esc(d.first)} ${esc(d.last)}</div><div class="ptag">#${d.number ?? '–'} · ${POS[d.pos]}</div><div class="sclub">${esc(teamName(d.team))}</div></div>
     <div class="photo"><div class="wm">${esc(d.number ?? '')}</div>${avatar(d, true)}</div>
     <div class="big3"><div><b>${fmt(d.points)}</b><span>Punkte</span></div><div><b>${avg(d)}</b><span>Ø Punkte</span></div><div><b>${fmt(d.price)}</b><span>Marktwert ${pill(d)}</span></div></div>
-    ${live}${d.pos === 'G' ? `<div class="grid4"><div><b>${d.games}</b><span>Spiele</span></div><div><b>${d.wins}</b><span>Siege</span></div><div><b>${d.shutouts ?? 0}</b><span>Shutouts</span></div><div class="hi"><b>${pctText(d.savePct)}</b><span>Fangquote</span></div>
+    ${live}${d.pos === 'G' ? `<div class="grid4"><div><b>${d.games}</b><span>Spiele</span></div><div><b>${d.wins}</b><span>Siege</span></div><div><b>${d.shutouts ?? 0}</b><span>Shutouts</span></div><div class="hi"><b data-svpct>${pctText(d.savePct)}</b><span>Fangquote</span></div>
       <div><b>${fmt(d.saves ?? 0)}</b><span>Paraden</span></div><div><b>${d.goalsAgainst ?? 0}</b><span>Gegentore</span></div><div><b>${d.games ? ((d.goalsAgainst ?? 0) / d.games).toFixed(2) : '–'}</b><span>GT / Spiel</span></div><div><b>${d.pim}</b><span>Strafmin.</span></div></div>`
     : `<div class="grid4"><div><b>${d.games}</b><span>Spiele</span></div><div><b>${d.goals}</b><span>Tore</span></div><div><b>${d.assists}</b><span>Assists</span></div><div><b>${d.plusMinus > 0 ? '+' : ''}${d.plusMinus}</b><span>+/−</span></div>
       <div><b>${d.shots}</b><span>Schüsse</span></div><div><b>${d.pim}</b><span>Strafmin.</span></div><div><b>${d.wins}</b><span>Siege</span></div><div><b>${d.blocked ?? 0}</b><span>Geblockt</span></div></div>`}
@@ -216,6 +216,13 @@ async function openPlayer(id) {
     const a = bg.querySelector('#g1'), b = bg.querySelector('#g2');
     if (!a) return;
     a.innerHTML = gamesHtml(g.recent, g.error, d);
+    // goalie without season numbers yet: save percentage from his games in the NHL log
+    const sv = bg.querySelector('[data-svpct]');
+    if (sv && d.savePct == null) {
+      const games = (g.recent || []).filter((x) => !x.missed && x.sa > 0);
+      const sa = games.reduce((s, x) => s + x.sa, 0), ga = games.reduce((s, x) => s + x.ga, 0);
+      if (sa) sv.textContent = pctText((sa - ga) / sa);
+    }
     const sc = a.querySelector('[data-scrollend]'); if (sc) sc.scrollLeft = sc.scrollWidth; // newest game on the right
     b.innerHTML = gamesListHtml(g.recent);
   }).catch(() => { const a = bg.querySelector('#g1'); if (a) a.innerHTML = '<div class="empty">Die Spiele konnten gerade nicht geladen werden.</div>'; });
