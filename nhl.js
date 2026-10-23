@@ -366,7 +366,8 @@ export function parseSeasonResults(json) {
   const out = new Map();
   for (const g of json.games ?? []) {
     if ((g.gameState === 'FINAL' || g.gameState === 'OFF') && g.homeTeam?.score != null && g.awayTeam?.score != null) {
-      out.set(g.id, { home: g.homeTeam.score, away: g.awayTeam.score, ot: g.gameOutcome?.lastPeriodType === 'OT' || g.gameOutcome?.lastPeriodType === 'SO' });
+      out.set(g.id, { home: g.homeTeam.score, away: g.awayTeam.score, ot: g.gameOutcome?.lastPeriodType === 'OT' || g.gameOutcome?.lastPeriodType === 'SO',
+        homeTeam: g.homeTeam.abbrev ?? null, awayTeam: g.awayTeam.abbrev ?? null, date: g.gameDate ?? null });
     }
   }
   return out;
@@ -419,8 +420,12 @@ export async function getGameLog(playerId) {
       const row = g.gameId != null ? exact.get(playerId, g.gameId) : null;
       if (row) { g.pts = row.pts; g.exact = true; }
     }
-    logCache.set(playerId, { t: Date.now(), data });
-    return data;
+    // games of his current team in which he did not play (shown with a cross)
+    const team = db.prepare('SELECT team FROM players WHERE id = ?').get(playerId)?.team;
+    if (team && !byTeam.has(team)) { try { byTeam.set(team, await seasonResults(team)); } catch { /* optional */ } }
+    const all = addMissedGames(data, team, byTeam.get(team));
+    logCache.set(playerId, { t: Date.now(), data: all });
+    return all;
   } catch (e) {
     console.log(`Spielverlauf von Spieler ${playerId} nicht geladen: ${e.message}`);
     lastLogError = e.message;
@@ -429,6 +434,27 @@ export async function getGameLog(playerId) {
   }
 }
 export let lastLogError = '';
+
+/**
+ * Add the finished games of his team that are missing from the player's log (scratched, injured, backup goalie),
+ * newest first like the log. After a trade only games from his first game for the new team on.
+ */
+export function addMissedGames(log, team, results) {
+  if (!team || !results) return log;
+  const played = new Set(log.map((g) => g.gameId));
+  const forTeam = log.filter((g) => g.team === team).map((g) => g.date).sort();
+  const traded = log.some((g) => g.team && g.team !== team);
+  const from = traded ? forTeam[0] ?? '9999' : '';
+  const missed = [];
+  for (const [gameId, r] of results) {
+    if (played.has(gameId) || !r.date || r.date < from || (r.homeTeam !== team && r.awayTeam !== team)) continue;
+    const home = r.homeTeam === team;
+    const own = home ? r.home : r.away, opp = home ? r.away : r.home;
+    missed.push({ gameId, team, date: r.date, opp: home ? r.awayTeam : r.homeTeam, home, missed: true, pts: 0, text: 'nicht eingesetzt',
+      result: { own, opp, win: own > opp, ot: !!r.ot } });
+  }
+  return [...log, ...missed].sort((a, b) => String(b.date).localeCompare(String(a.date)));
+}
 
 /** Write season totals into the players table. Fantasy points are calculated from the totals. */
 /** Finished games of this season that the app followed live, with their exact points. */

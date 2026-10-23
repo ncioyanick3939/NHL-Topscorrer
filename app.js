@@ -227,14 +227,15 @@ const dm = (s) => { const [y, m, d] = String(s).split('-'); return d && m ? `${d
 function gamesHtml(log, err, d) {
   if (!log || !log.length) return `<div class="empty">${log ? 'Noch keine Spiele in dieser Saison.' : 'Die Spiele konnten gerade nicht geladen werden.'}${err ? `<br><small>${esc(err)}</small>` : ''}</div>`;
   const last = [...log].reverse(); // oldest on the left
-  const mx = Math.max(1, ...last.map((g) => Math.abs(g.pts)));
+  const mx = Math.max(1, ...last.filter((g) => !g.missed).map((g) => Math.abs(g.pts)));
   const av = d.games ? d.points / d.games : 0;
   const cols = last.map((g) => {
-    const h = Math.max(10, Math.round(Math.abs(g.pts) / mx * 96));
-    const hot = g.pts > av * 1.15;
     const left = g.home ? g.team : g.opp, right = g.home ? g.opp : g.team;
     const r = g.result;
     const score = r ? (g.home ? `${r.own}:${r.opp}` : `${r.opp}:${r.own}`) : '';
+    if (g.missed) return `<div class="gcol miss" title="Nicht eingesetzt"><div class="gbar"><span class="gx">✕</span></div><b>–</b><div class="glogos">${logo(left)}${logo(right)}</div><small>${score}</small></div>`;
+    const h = Math.max(10, Math.round(Math.abs(g.pts) / mx * 96));
+    const hot = g.pts > av * 1.15;
     return `<div class="gcol"><div class="gbar"><i class="${hot ? 'hot' : ''}${g.pts < 0 ? ' neg' : ''}" style="height:${h}px"></i></div><b>${g.pts}</b><div class="glogos">${logo(left)}${logo(right)}</div><small>${score}</small></div>`;
   }).join('');
   return `<div class="gwrap"><div class="gcols" data-scrollend>${cols}</div><div class="season"><span>Saison ${seasonLabel}</span><b>${fmt(d.points)}</b><small>Punkte</small><b>${avg(d)}</b><small>Ø</small><b>${d.games}</b><small>Spiele</small></div></div>${seasonNote(d)}`;
@@ -249,9 +250,12 @@ function seasonNote(d) {
 }
 function gamesListHtml(log) {
   if (!log || !log.length) return '';
-  const chrono = [...log].reverse();
-  const list = log.map((g, k) => `<li><div><b>${chrono.length - k}. Spiel</b> · ${g.home ? 'vs' : '@'} ${esc(g.opp)} ${res(g)}<small>${dm(g.date)} · ${esc(g.text)}</small></div><div style="text-align:right"><b>${g.pts} Pkt</b></div></li>`).join('');
-  return `<details class="fold" open><summary><h2>Punkte pro Spiel <small>${chrono.length} Spiele</small></h2></summary><ul class="log">${list}</ul></details>`;
+  let n = log.filter((g) => !g.missed).length; // games he played, counted down from the newest
+  const total = n;
+  const list = log.map((g) => g.missed
+    ? `<li class="miss"><div><b>✕ Nicht eingesetzt</b> · ${g.home ? 'vs' : '@'} ${esc(g.opp)} ${res(g)}<small>${dm(g.date)}</small></div><div style="text-align:right"><b>–</b></div></li>`
+    : `<li><div><b>${n--}. Spiel</b> · ${g.home ? 'vs' : '@'} ${esc(g.opp)} ${res(g)}<small>${dm(g.date)} · ${esc(g.text)}</small></div><div style="text-align:right"><b>${g.pts} Pkt</b></div></li>`).join('');
+  return `<details class="fold" open><summary><h2>Punkte pro Spiel <small>${total} Spiele</small></h2></summary><ul class="log">${list}</ul></details>`;
 }
 
 /** Price curve with axis labels, like Topscorers. */

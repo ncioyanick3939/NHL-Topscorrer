@@ -627,3 +627,10 @@ main.static>*{animation:none}
 .lg b{font:700 17px var(--f-display);font-variant-numeric:tabular-nums}
 .grid4 .hi b{color:var(--yellow)}
 .pnums .pair{display:inline-flex;align-items:baseline;gap:4px;white-space:nowrap}
+
+/* games he did not play */
+.gcol.miss .gbar{align-items:flex-end}
+.gx{display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--down-bg);color:var(--down);font:700 14px/1 var(--f-body);box-shadow:inset 0 0 0 1.5px rgba(255,107,94,.5)}
+.gcol.miss>b{color:var(--mute)}
+.gcol.miss .glogos,.gcol.miss small{opacity:.55}
+.log li.miss{opacity:.6}.log li.miss b:first-child{color:var(--down)}
