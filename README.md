@@ -114,7 +114,7 @@ Alle Dateien liegen in einem Ordner.
 - `game.js`: Konten, Startteam, Kaufen und Verkaufen, Liga
 - `config.js`: alle Spielregeln und Punktewerte
 - `db.js`, `util.js`: Datenbank und Hilfsfunktionen
-- `index.html`, `style.css`, `app.js`: die App im Browser (nur diese drei werden ausgeliefert)
+- `index.html`, `style.css`, `app.js`, `fx.js`: die App im Browser (`fx.js`: Konfetti, Torlicht, Feiern). Nur diese Dateien und die Bilder werden ausgeliefert
 - `flow.test.js`: automatische Tests
 - `data/app.db`: die Datenbank (SQLite). **Das ist die Datei für dein Backup.**
 
