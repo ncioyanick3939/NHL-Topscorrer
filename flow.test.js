@@ -280,6 +280,9 @@ test('game log: last games of a skater and a goalie in plain words', () => {
   assert.equal(rows[1].home, false);
   assert.equal(rows[1].text, 'kein Punkt, -1, 1 Schüsse');
   assert.equal(rows[2].text, '28 Paraden, 2 Gegentore, Sieg · 93.3 %'); // 28 of 30 shots
+  assert.deepEqual([rows[2].sa, rows[2].ga], [30, 2]); // kept for the save percentage in the profile
+  const [g2] = nhl.parseClubStats({ goalies: [{ playerId: 8499003, gamesPlayed: 3, wins: 2, shotsAgainst: 90, goalsAgainst: 6 }] });
+  assert.equal(g2.saves, 84); // no 'saves' in the table: shots against minus goals against
   assert.equal(rows[2].pts, 28 * 4 - 2 * 15 + 5 + 6); // + goalie time bonus for 60 minutes
 });
 
