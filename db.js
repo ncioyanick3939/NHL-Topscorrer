@@ -177,6 +177,7 @@ db.exec(`DELETE FROM roster WHERE rowid NOT IN (SELECT MIN(rowid) FROM roster GR
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS roster_one_owner ON roster(player_id)');
 addColumn('roster', 'lineup', 'INTEGER NOT NULL DEFAULT -1'); // -1 not placed, 0 bench, 1-3 line, 9 goalie
 addColumn('users', 'starter_given', 'INTEGER NOT NULL DEFAULT 0');
+addColumn('day_stats', 'detail', 'TEXT'); // all stats of the game as JSON, for the points breakdown
 
 // Indexes for the per-player lookups (last game, next game, missed last game). Without them a full season
 // makes every player list scan all games and stats for each player: minutes instead of milliseconds.
