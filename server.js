@@ -147,7 +147,7 @@ async function api(req, res, url) {
 }
 
 // Only these three files are public. Code, database and invite code live in the same folder and must never be served.
-const STATIC = { '/': 'index.html', '/index.html': 'index.html', '/style.css': 'style.css', '/app.js': 'app.js',
+const STATIC = { '/': 'index.html', '/index.html': 'index.html', '/style.css': 'style.css', '/app.js': 'app.js', '/fx.js': 'fx.js',
   '/manifest.webmanifest': 'manifest.webmanifest', '/icon-192.png': 'icon-192.png', '/icon-512.png': 'icon-512.png', '/apple-touch-icon.png': 'apple-touch-icon.png', '/nhl-logo.png': 'nhl-logo.png' };
 
 async function serveStatic(req, res, url) {

@@ -1,3 +1,5 @@
+import * as fx from './fx.js';
+
 const $app = document.getElementById('app');
 const $nav = document.getElementById('nav');
 
@@ -347,7 +349,7 @@ const views = {
     const gc = gain > 0 ? 'up' : gain < 0 ? 'down' : 'flat';
     const hurt = team.players.filter((p) => p.injury || p.missedLast);
     const running = live.games.filter((g) => g.state === 'LIVE' || g.state === 'CRIT').length;
-    return `<section class="hero"><div class="lbl">Teamwert</div><div class="big">${fmt(team.value)}</div>
+    return `<section class="hero"><div class="lbl">Teamwert</div><div class="big" data-count="${team.value}" data-count-key="teamvalue">${fmt(team.value)}</div>
       <span class="pill ${gc}">${gain ? `${arrow(gc)} ${gain > 0 ? '+' : '−'}${fmt(Math.abs(gain))} seit Kauf` : 'Unverändert seit Kauf'}</span></section>
       <div class="tiles"><div class="tile"><b>${S.me.rank}.</b><span>Rang</span></div><div class="tile"><b>${fmt(team.points + live.myPoints)}</b><span>Punkte</span></div><div class="tile"><b>${money(team.balance)}</b><span>Konto</span></div></div>
       <h2>Markt <small>geht er hoch oder runter?</small></h2>${trendHtml(trend, true)}
@@ -427,7 +429,7 @@ const views = {
     const nRunning = d.games.filter((g) => g.state === 'LIVE' || g.state === 'CRIT').length;
     const dayRank = [...lg].sort((x, y) => y.live - x.live || y.points - x.points).findIndex((r) => r.me) + 1;
     const hero = running || d.myPoints ? `<section class="livehero${running ? ' on' : ''}"><div class="lbl">${running ? '<i></i>Live · ' + nRunning + (nRunning === 1 ? ' Spiel läuft' : ' Spiele laufen') : 'Heute'}</div>
-      <div class="big ${d.myPoints < 0 ? 'down' : ''}">${d.myPoints > 0 ? '+' : ''}${fmt(d.myPoints)}</div><div class="sub">Punkte deiner Aufstellung${dayRank ? ` · <b>${dayRank}.</b> heute in der Liga` : ''}</div></section>` : '';
+      <div class="big ${d.myPoints < 0 ? 'down' : ''}" data-count="${d.myPoints}" data-fmt="sign" data-count-key="livepts">${d.myPoints > 0 ? '+' : ''}${fmt(d.myPoints)}</div><div class="sub">Punkte deiner Aufstellung${dayRank ? ` · <b>${dayRank}.</b> heute in der Liga` : ''}</div></section>` : '';
     const top = hero + (running ? '' : countdown(d.nextStart));
     if (S.sub.live === 'league') {
       const board = [...lg].sort((x, y) => y.live - x.live || y.points - x.points);
@@ -495,6 +497,16 @@ function paint(html, screen) {
   window.scrollTo(0, y);
   if (S.wantNext) { const el = document.getElementById('nextgame'); if (el) { S.wantNext = false; el.scrollIntoView({ block: 'center' }); } }
   tickCountdown();
+  fx.countUp($app);
+}
+
+/** After fresh data: celebrate won auctions, goals of lineup players and a better rank. */
+async function checkNews() {
+  try {
+    const [me, live, auctions] = await Promise.all([api('/api/me', { quiet: true }), api('/api/live', { quiet: true }), api('/api/auctions', { quiet: true })]);
+    S.me = me;
+    fx.news({ me, live, auctions }).forEach((msg, i) => setTimeout(() => toast(msg), 3400 * (i + 1)));
+  } catch { /* offline or logged out: no surprises */ }
 }
 
 async function render() {
@@ -515,6 +527,7 @@ async function render() {
   if (html !== cached) paint(html, key);
   if (S.wantNext) { S.wantNext = false; document.getElementById('nextgame')?.scrollIntoView({ block: 'center' }); }
   if (S.tab === 'live' || S.tab === 'board') S.timer = setTimeout(render, 30_000);
+  checkNews();
 }
 
 const STAR = '<svg viewBox="0 0 24 24" class="star" aria-hidden="true"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.6 7-6.2-3.7-6.2 3.7 1.6-7L2 9.2l7.1-.6z"/></svg>';
@@ -624,7 +637,12 @@ async function gameSheet(id) {
 
 /* ---------- bids, offers ---------- */
 async function act(path, body, okMsg, bg) {
-  try { await api(path, { body }); toast(okMsg); closeSheet(bg); await refreshMe(); render(); } catch (err) { toast(err.message); }
+  try {
+    await api(path, { body }); toast(okMsg); closeSheet(bg);
+    if (path === '/api/bid') { fx.burst({ count: 80 }); fx.vibrate([30, 40, 60]); }
+    if (path === '/api/sell' || path === '/api/accept') { fx.burst({ kind: 'coins', count: 70 }); fx.vibrate(50); }
+    await refreshMe(); render();
+  } catch (err) { toast(err.message); }
 }
 
 async function bidSheet(id) {
@@ -803,6 +821,7 @@ document.addEventListener('submit', async (e) => {
 document.addEventListener('click', async (e) => {
   const t = e.target;
   if (t.closest('.sheet')) return;
+  if (t.closest('.top .logo')) return fx.logoTap();
   const bidBtn = t.closest('[data-bid]');
   if (bidBtn) return bidSheet(Number(bidBtn.dataset.bid));
   const sellBtn = t.closest('[data-sellmenu]');
