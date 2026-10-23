@@ -134,7 +134,7 @@ function shape(p, owned) {
     price: p.price, prev: p.prev_price, hist: hist.length ? hist : [p.price],
     games: p.games, goals: p.goals, assists: p.assists, points: p.fantasy_pts,
     todayPts: live, tomorrow: live ? nextPrice(p.price, live) : p.price,
-    locked: !!p.locked, owned: owned.has(p.id),
+    locked: !!p.locked, tradeLocked: RULES.marketLock && !!p.locked, owned: owned.has(p.id), // locked: lineup fixed; tradeLocked: no market
     injury: p.injury_status ? { status: p.injury_status, text: p.injury_text, returnDate: p.injury_return } : null,
     missedLast: !!p.missed_last,
     hoursLeft: p.listing_expires ? Math.max(0, Math.ceil((new Date(p.listing_expires) - Date.now()) / 3_600_000)) : null,
@@ -242,7 +242,7 @@ export function buy(userId, playerId) {
     const p = db.prepare(`${SELECT_PLAYER} WHERE p.id = ?`).get(playerId);
     if (!p) throw new HttpError(404, 'Spieler nicht gefunden.');
     if (!(p.listing_expires && new Date(p.listing_expires) > new Date())) throw new HttpError(409, 'Dieser Spieler ist nicht auf dem Markt.');
-    if (p.locked) throw new HttpError(409, 'Gesperrt: Das Team spielt heute oder der Tag ist noch nicht abgeschlossen.');
+    if (RULES.marketLock && p.locked) throw new HttpError(409, 'Gesperrt: Das Team spielt heute oder der Tag ist noch nicht abgeschlossen.');
     const u = db.prepare('SELECT balance FROM users WHERE id = ?').get(userId);
     if (db.prepare('SELECT 1 FROM roster WHERE user_id = ? AND player_id = ?').get(userId, playerId)) throw new HttpError(409, 'Dieser Spieler gehört dir schon.');
     if (db.prepare('SELECT 1 FROM roster WHERE player_id = ?').get(playerId)) throw new HttpError(409, 'Dieser Spieler gehört schon einem anderen Manager.');
@@ -265,7 +265,7 @@ export function sell(userId, playerId) {
     const p = db.prepare(`${SELECT_PLAYER} WHERE p.id = ?`).get(playerId);
     if (!p) throw new HttpError(404, 'Spieler nicht gefunden.');
     if (!db.prepare('SELECT 1 FROM roster WHERE user_id = ? AND player_id = ?').get(userId, playerId)) throw new HttpError(409, 'Dieser Spieler gehört dir nicht.');
-    if (p.locked) throw new HttpError(409, 'Gesperrt: Das Team spielt heute oder der Tag ist noch nicht abgeschlossen.');
+    if (RULES.marketLock && p.locked) throw new HttpError(409, 'Gesperrt: Das Team spielt heute oder der Tag ist noch nicht abgeschlossen.');
     db.prepare('DELETE FROM roster WHERE user_id = ? AND player_id = ?').run(userId, playerId);
     db.prepare('DELETE FROM user_listings WHERE player_id = ? AND seller_id = ?').run(playerId, userId);
     if (!db.prepare('SELECT 1 FROM user_listings WHERE player_id = ?').get(playerId)) dropBids(playerId);
@@ -399,7 +399,7 @@ export function placeBid(userId, playerId, amount) {
     if (!on) throw new HttpError(409, 'Dieser Spieler ist nicht auf dem Markt.');
     if (on.sellerId === userId) throw new HttpError(409, 'Das ist dein eigener Spieler.');
     if (db.prepare('SELECT 1 FROM roster WHERE user_id = ? AND player_id = ?').get(userId, playerId)) throw new HttpError(409, 'Dieser Spieler gehört dir schon.');
-    if (p.locked) throw new HttpError(409, 'Gesperrt: Das Team spielt heute oder der Tag ist noch nicht abgeschlossen.');
+    if (RULES.marketLock && p.locked) throw new HttpError(409, 'Gesperrt: Das Team spielt heute oder der Tag ist noch nicht abgeschlossen.');
     const min = on.kind === 'user' ? PRICE.minPrice : p.price;
     if (!Number.isFinite(amount) || amount < min) throw new HttpError(400, `Das Gebot muss mindestens ${min.toLocaleString('de-CH')} sein.`);
     const why = cannotReceive(userId, p.pos, amount);
@@ -421,7 +421,7 @@ export function offerPlayer(userId, playerId) {
   return tx(() => {
     const p = db.prepare(`${SELECT_PLAYER} WHERE p.id = ?`).get(playerId);
     if (!p || !db.prepare('SELECT 1 FROM roster WHERE user_id = ? AND player_id = ?').get(userId, playerId)) throw new HttpError(409, 'Dieser Spieler gehört dir nicht.');
-    if (p.locked) throw new HttpError(409, 'Gesperrt: Das Team spielt heute oder der Tag ist noch nicht abgeschlossen.');
+    if (RULES.marketLock && p.locked) throw new HttpError(409, 'Gesperrt: Das Team spielt heute oder der Tag ist noch nicht abgeschlossen.');
     if (db.prepare('SELECT 1 FROM user_listings WHERE player_id = ?').get(playerId)) throw new HttpError(409, 'Dieser Spieler ist schon angeboten.');
     const expires = new Date(Date.now() + RULES.userListingHours * 3_600_000).toISOString();
     db.prepare('INSERT INTO user_listings (player_id, seller_id, expires_at) VALUES (?,?,?)').run(playerId, userId, expires);
@@ -445,7 +445,7 @@ export function cancelOffer(userId, playerId) {
 export function acceptBid(userId, playerId, bidderId) {
   return tx(() => {
     const p = db.prepare(`${SELECT_PLAYER} WHERE p.id = ?`).get(playerId);
-    if (p?.locked) throw new HttpError(409, 'Gesperrt: Das Team spielt heute oder der Tag ist noch nicht abgeschlossen.');
+    if (RULES.marketLock && p?.locked) throw new HttpError(409, 'Gesperrt: Das Team spielt heute oder der Tag ist noch nicht abgeschlossen.');
     const r = acceptOffer(userId, playerId, bidderId);
     if (r.error) throw new HttpError(409, r.error);
     return r;

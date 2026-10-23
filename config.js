@@ -56,6 +56,10 @@ export const RULES = {
   starter: { F: 9, D: 6, G: 1, maxPlayerPrice: 450_000, minTotal: 3_000_000, maxTotal: 3_500_000 },
   userListingHours: 24,   // how long a player offered by a manager stays on the market
   injurySyncMs: 60 * 60_000,
+  // true = players whose team plays today cannot be bought, sold or bid on until the day is closed (next morning).
+  // Off: the market is always open. Careful: then a player can be bought at the old price after a strong game.
+  // The lineup stays locked either way, so nobody can put a player in after he scored.
+  marketLock: false,
 };
 
 export const NHL_TEAMS = [
