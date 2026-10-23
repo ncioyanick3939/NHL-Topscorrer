@@ -634,3 +634,4 @@ main.static>*{animation:none}
 .gcol.miss>b{color:var(--mute)}
 .gcol.miss .glogos,.gcol.miss small{opacity:.55}
 .log li.miss{opacity:.6}.log li.miss b:first-child{color:var(--down)}
+.grid4.g span{display:block;line-height:1.25}
