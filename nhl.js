@@ -236,7 +236,7 @@ export function parseClubStats(json) {
   }
   for (const g of json.goalies ?? []) {
     const toi = Number(g.timeOnIce); // seconds in the season
-    out.push({ id: g.playerId, pos: 'G', games: g.gamesPlayed ?? 0, goals: 0, assists: 0, plus_minus: 0, shots: 0, pim: 0,
+    out.push({ id: g.playerId, pos: 'G', games: g.gamesPlayed ?? 0, goals: g.goals ?? 0, assists: g.assists ?? 0, plus_minus: 0, shots: 0, pim: g.penaltyMinutes ?? 0,
       wins: g.wins ?? 0, saves: g.saves ?? Math.max(0, (g.shotsAgainst ?? 0) - (g.goalsAgainst ?? 0)), goals_against: g.goalsAgainst ?? 0, shutouts: g.shutouts ?? 0,
       goalie_time: Number.isFinite(toi) ? Math.floor(toi / 600) : 0 });
   }
@@ -461,7 +461,8 @@ export function addMissedGames(log, team, results) {
 /** Finished games of this season that the app followed live, with their exact points. */
 export function trackedSeason(playerId, now = new Date()) {
   const start = `${seasonStrings(now).cur.slice(0, 4)}-09-01`;
-  return db.prepare(`SELECT COUNT(*) AS games, COALESCE(SUM(d.pts), 0) AS pts FROM day_stats d JOIN games g ON g.id = d.game_id
+  return db.prepare(`SELECT COUNT(*) AS games, COALESCE(SUM(d.pts), 0) AS pts, COALESCE(SUM(d.blocked), 0) AS blocked,
+    COALESCE(SUM(json_extract(d.detail, '$.fo_won')), 0) AS fo_won FROM day_stats d JOIN games g ON g.id = d.game_id
     WHERE d.player_id = ? AND d.day >= ? AND g.state IN ('FINAL','OFF')`).get(playerId, start);
 }
 
