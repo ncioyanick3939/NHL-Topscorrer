@@ -598,3 +598,18 @@ test('game log: games of his team he did not play come in as missed, in the righ
   const traded = nhl.addMissedGames([{ gameId: 13, team: 'UTA', date: '2026-10-14' }, { gameId: 9, team: 'COL', date: '2026-10-08' }], 'UTA', res);
   assert.ok(!traded.some((g) => g.missed));
 });
+
+test('skater profile: blocked shots and faceoffs won come from the games the app followed', async () => {
+  const { db } = await import('./db.js');
+  const game = await import('./game.js');
+  db.prepare("INSERT INTO players (id, team, first, last, pos, price, prev_price, games) VALUES (8495001,'ZZB','Block','Er','F',300000,300000,5)").run();
+  const day = `${new Date().getFullYear() + (new Date().getMonth() < 8 ? 0 : 1)}-01-15`; // inside the current season
+  db.prepare("INSERT INTO games (id, day, state, home, away) VALUES (95001, ?, 'OFF', 'ZZB', 'ZZC'), (95002, ?, 'OFF', 'ZZC', 'ZZB')").run(day, day.replace('-15', '-16'));
+  const ins = db.prepare('INSERT INTO day_stats (player_id, day, game_id, blocked, pts, detail) VALUES (?,?,?,?,?,?)');
+  ins.run(8495001, day, 95001, 3, 40, JSON.stringify({ fo_won: 7 }));
+  ins.run(8495001, day.replace('-15', '-16'), 95002, 2, 20, null); // an older row without details
+  const d = game.playerDetail(1, 8495001);
+  assert.equal(d.blocked, 5);
+  assert.equal(d.foWon, 7);
+  assert.equal(d.seasonExact, 2);
+});
