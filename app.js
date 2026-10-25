@@ -516,18 +516,28 @@ const views = {
     const nextIdx = games.findIndex((g) => !done(g)); // first game that is running or still to come
     const zone = { timeZone: 'Europe/Zurich', hour: '2-digit', minute: '2-digit' };
     const dayFmt = (iso) => new Date(iso).toLocaleDateString('de-CH', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/Zurich' });
+    // calendar day in Zurich (YYYY-MM-DD), so "today" is the day the user sees on his phone
+    const zKey = (d) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Zurich', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
+    const keyOf = (g) => (g.start ? zKey(new Date(g.start)) : g.day);
+    const today = zKey(new Date());
+    const shift = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return zKey(d); };
+    const rel = { [today]: 'Heute', [shift(-1)]: 'Gestern', [shift(1)]: 'Morgen' };
+    // jump target: today, else the next day with games, else the last day
+    const keys = [...new Set(games.map(keyOf))];
+    const target = keys.find((k) => k >= today) ?? keys.at(-1);
     let lastDay = '';
     const rows = games.map((g, k) => {
+      const key = keyOf(g);
       const dd = g.start ? dayFmt(g.start) : g.day;
-      const h = dd !== lastDay ? `<div class="dayhead"${k === nextIdx ? ' id="nextgame"' : ''}>${esc(dd)}</div>` : '';
-      lastDay = dd;
+      const h = key !== lastDay ? `<div class="dayhead${key === today ? ' today' : ''}"${key === target ? ' id="nextgame"' : ''}>${rel[key] ? `<b>${rel[key]}</b> · ` : ''}${esc(dd)}</div>` : '';
+      lastDay = key;
       const mid = (g.state === 'LIVE' || g.state === 'CRIT') ? `<b>${g.homeScore ?? 0} : ${g.awayScore ?? 0}</b><small class="live">Live</small>`
         : done(g) ? `<b>${g.homeScore ?? '–'} : ${g.awayScore ?? '–'}</b><small>Ende</small>` : `<b class="time">${g.start ? new Date(g.start).toLocaleTimeString('de-CH', zone) : 'bald'}</b>`;
       return `${h}<div class="game${k === nextIdx ? ' next' : ''}" data-game="${g.id}" role="button" tabindex="0"><div class="t">${logo(g.home)}${esc(g.home)}</div><div class="mid">${mid}</div><div class="t r">${esc(g.away)}${logo(g.away)}</div></div>`;
     }).join('');
     if (S.scrollNext) { S.scrollNext = false; S.wantNext = true; }
     return `${head}${games.length ? rows : '<div class="empty">Keine Spiele im Spielplan. Der Spielplan wird von der NHL geladen.</div>'}
-      <div class="note">Oben die vergangenen Spiele, unten die kommenden. Tippe auf ein Spiel für Tore, Assists und Strafen.</div>`;
+      <div class="note">Die App springt zum heutigen Tag. Nach oben scrollen für vergangene Spiele, nach unten für kommende. Tippe auf ein Spiel für Tore, Assists und Strafen.</div>`;
   },
 };
 
@@ -570,7 +580,7 @@ function paint(html, screen) {
   $app.innerHTML = header() + `<main${fresh ? '' : ' class="static"'}>${installTip()}${html}</main>`;
   if (keep) { const q = document.getElementById('q'); q?.focus(); q?.setSelectionRange(q.value.length, q.value.length); }
   window.scrollTo(0, y);
-  if (S.wantNext) { const el = document.getElementById('nextgame'); if (el) { S.wantNext = false; el.scrollIntoView({ block: 'center' }); } }
+  if (S.wantNext) { const el = document.getElementById('nextgame'); if (el) { S.wantNext = false; el.scrollIntoView({ block: 'start' }); } }
   tickCountdown();
   fx.countUp($app);
 }
@@ -600,7 +610,7 @@ async function render() {
   if (my !== renderId) return; // a newer render took over
   htmlCache.set(key, html);
   if (html !== cached) paint(html, key);
-  if (S.wantNext) { S.wantNext = false; document.getElementById('nextgame')?.scrollIntoView({ block: 'center' }); }
+  if (S.wantNext) { S.wantNext = false; document.getElementById('nextgame')?.scrollIntoView({ block: 'start' }); }
   if (S.tab === 'live' || S.tab === 'board') S.timer = setTimeout(render, 30_000);
   checkNews();
 }
