@@ -400,7 +400,7 @@ const views = {
     const running = live.games.filter((g) => g.state === 'LIVE' || g.state === 'CRIT').length;
     return `<section class="hero"><div class="lbl">Teamwert</div><div class="big" data-count="${team.value}" data-count-key="teamvalue">${fmt(team.value)}</div>
       <span class="pill ${gc}">${gain ? `${arrow(gc)} ${gain > 0 ? '+' : '−'}${fmt(Math.abs(gain))} seit Kauf` : 'Unverändert seit Kauf'}</span></section>
-      <div class="tiles"><div class="tile"><b>${S.me.rank}.</b><span>Rang</span></div><div class="tile"><b>${fmt(team.points + live.myPoints)}</b><span>Punkte</span></div><div class="tile"><b>${money(team.balance)}</b><span>Konto</span></div></div>${dataStamp()}
+      <div class="tiles"><div class="tile"><b>${S.me.rank}.</b><span>Rang</span></div><div class="tile"><b>${fmt(team.points + live.myPoints)}</b><span>Punkte</span></div><div class="tile"><b class="${team.balance < 0 ? 'down' : ''}">${team.balance < 0 ? '−' : ''}${money(Math.abs(team.balance))}</b><span>Konto</span></div></div>${dataStamp()}
       ${resultsHtml(live.games)}
       ${tops.length ? `<h2>NHL-Topscorer <small>Fantasy-Punkte der Saison</small></h2>${tops.slice(0, 3).map((p, i) => `<div class="mv" data-open="${p.id}"><span><b class="tsn">${i + 1}.</b> ${esc(p.first[0] || '')}. ${esc(p.last)} <small>${esc(p.team)}</small></span><b>${fmt(p.points)}</b></div>`).join('')}<button class="link more" data-goto="nhl:top">Alle Topscorer</button>` : ''}
       <h2>Markt <small>geht er hoch oder runter?</small></h2>${trendHtml(trend, true)}
@@ -439,7 +439,7 @@ const views = {
     const [t, au, trend] = await Promise.all([api('/api/team'), api('/api/auctions'), api('/api/trend')]);
     const bidSum = au.bids.reduce((s, b) => s + b.amount, 0);
     const after = t.balance - bidSum;
-    const bal = `<div class="balbar"><span>Kontostand<b>${fmt(t.balance)}</b></span><span>Nach Geboten<b class="${after < 0 ? 'down' : ''}">${fmt(after)}</b></span><span>Kader<b>${t.players.length}/20</b></span></div>`;
+    const bal = `<div class="balbar"><span>Kontostand<b class="${t.balance < 0 ? 'down' : ''}">${fmt(t.balance)}</b></span><span>Nach Geboten<b class="${after < 0 ? 'down' : ''}">${fmt(after)}</b></span><span>Kader<b>${t.players.length}/20</b></span></div>`;
     const head = TEAMTABS();
     const f = [['', 'Alle'], ['F', 'Stürmer'], ['D', 'Verteidiger'], ['G', 'Torhüter']];
     const trendBar = trendHtml(trend, false);
@@ -725,7 +725,7 @@ async function bidSheet(id) {
   try { d = await api(`/api/players/${id}`); } catch (e) { return toast(e.message); }
   const min = d.listedBy ? d.minBid : d.price;
   const bg = openSheet(`<div class="shead">${avatar(d, true)}<div class="sname">${esc(d.first)} ${esc(d.last)}</div><div class="ptag">${POS[d.pos]} · ${esc(d.team)} · noch ${hoursText(d.hoursLeft)}</div></div>
-    <p style="margin-top:14px;text-align:center">${d.listedBy ? `Angebot von <b>${esc(d.listedBy)}</b>. Nur er sieht die Gebote und wählt eines aus.` : 'Wer bei Ablauf am meisten geboten hat, bekommt den Spieler. Alle Gebote sind geheim.'} Mindestgebot: <b>${fmt(min)}</b>. Dein Konto: <b>${fmt(S.me?.balance || 0)}</b>.</p>
+    <p style="margin-top:14px;text-align:center">${d.listedBy ? `Angebot von <b>${esc(d.listedBy)}</b>. Nur er sieht die Gebote und wählt eines aus.` : 'Wer bei Ablauf am meisten geboten hat, bekommt den Spieler. Alle Gebote sind geheim.'} Mindestgebot: <b>${fmt(min)}</b>. Dein Konto: <b>${fmt(S.me?.balance || 0)}</b> (bis −2'000'000 möglich).</p>
     <input class="field" id="bidamt" type="number" inputmode="numeric" min="${min}" step="1000" value="${d.myBid || min}" style="margin-top:10px;font-size:22px;text-align:center">
     <button class="btn buy wide" data-place style="margin-top:12px">${d.myBid ? 'Gebot ändern' : 'Gebot abgeben'}</button>
     ${d.myBid ? '<button class="btn sell wide" data-cancel style="margin-top:10px">Gebot zurückziehen</button>' : ''}`);
@@ -846,7 +846,7 @@ async function openRules() {
   const line = (l, v) => `<li><span>${l}</span><b>${v > 0 ? '+' : ''}${v}</b></li>`;
   openSheet(`<h1 class="rt">Spielregeln</h1>
     <h3>Allgemein</h3><p>Du führst ein Team aus echten NHL-Spielern. Jeder Spieler hat einen Marktwert. Wenn er in einem echten NHL-Spiel Tore, Assists und mehr erzielt, ändert sich sein Preis am nächsten Morgen. Es gibt keine Simulation: alles kommt von den echten Spielen.</p>
-    <h3>Start</h3><p>Neue Manager bekommen gratis ein Team mit ${u.starter.F} Stürmern, ${u.starter.D} Verteidigern und ${u.starter.G} Torhüter sowie ein Startbudget von ${fmt(p.startBudget)}. Kader: maximal ${u.maxRoster} Spieler, davon maximal ${u.maxGoalies} Torhüter.</p>
+    <h3>Start</h3><p>Neue Manager bekommen gratis ein Team mit ${u.starter.F} Stürmern, ${u.starter.D} Verteidigern und ${u.starter.G} Torhüter sowie ein Startbudget von ${fmt(p.startBudget)}. Das Konto darf bis −${fmt(p.creditLimit)} ins Minus gehen. Kader: maximal ${u.maxRoster} Spieler, davon maximal ${u.maxGoalies} Torhüter.</p>
     <h3>Transfermarkt</h3><p>Auf dem Markt stehen ${u.marketSlots} Spieler. Jede Stunde verlässt einer den Markt und ein neuer kommt. Jeder Spieler bleibt ${u.marketHours} Stunden. Verletzte Spieler werden vom Markt genommen.</p>
     <h3>Bieten</h3><p>Du kaufst per geheimem Gebot, mindestens zum Marktwert. Du kannst dein Gebot bis zum Ablauf ändern oder zurückziehen. Wer bei Ablauf am meisten geboten hat, bekommt den Spieler und zahlt sein Gebot (bei Gleichstand gewinnt das frühere Gebot). Wer verliert, zahlt nichts. Niemand sieht, wer wie viel geboten hat.</p>
     <h3>Verkaufen</h3><p>Du kannst einen Spieler sofort zum Marktwert verkaufen. Oder du bietest ihn den anderen Managern ${u.userListingHours} Stunden lang an. Sie bieten, nur du siehst die Angebote und nimmst eines an.</p>

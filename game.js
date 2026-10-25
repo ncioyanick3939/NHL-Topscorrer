@@ -255,7 +255,7 @@ export function buy(userId, playerId) {
     const u = db.prepare('SELECT balance FROM users WHERE id = ?').get(userId);
     if (db.prepare('SELECT 1 FROM roster WHERE user_id = ? AND player_id = ?').get(userId, playerId)) throw new HttpError(409, 'Dieser Spieler gehört dir schon.');
     if (db.prepare('SELECT 1 FROM roster WHERE player_id = ?').get(playerId)) throw new HttpError(409, 'Dieser Spieler gehört schon einem anderen Manager.');
-    if (u.balance < p.price) throw new HttpError(409, 'Zu wenig Guthaben.');
+    if (u.balance - p.price < -PRICE.creditLimit) throw new HttpError(409, `Zu wenig Guthaben (Konto darf höchstens bis −${PRICE.creditLimit.toLocaleString('de-CH')} gehen).`);
     const count = db.prepare('SELECT COUNT(*) AS n FROM roster WHERE user_id = ?').get(userId).n;
     if (count >= RULES.maxRoster) throw new HttpError(409, `Maximal ${RULES.maxRoster} Spieler im Kader.`);
     if (p.pos === 'G') {

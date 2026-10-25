@@ -38,6 +38,7 @@ export const PRICE = {
   capPct: 15,        // max change per day, up or down
   minPrice: 50_000,
   startBudget: 2_000_000,
+  creditLimit: 2_000_000, // the account may go down to -2'000'000 (buying and bidding on credit)
   priceFloorStart: 100_000,
   priceCeilStart: 1_800_000,
 };
