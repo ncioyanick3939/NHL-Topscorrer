@@ -1,5 +1,5 @@
 import { db } from './db.js';
-import { RULES } from './config.js';
+import { RULES, PRICE } from './config.js';
 
 /*
  * Sealed-bid auctions. A market player is on offer until his listing expires; then the highest bid wins
@@ -21,7 +21,7 @@ export function logTransfer(userId, playerId, kind, price) {
 export function cannotReceive(userId, pos, price) {
   const u = db.prepare('SELECT balance FROM users WHERE id = ?').get(userId);
   if (!u) return 'Unbekannter Manager.';
-  if (u.balance < price) return 'Zu wenig Guthaben.';
+  if (u.balance - price < -PRICE.creditLimit) return `Zu wenig Guthaben (Konto darf höchstens bis −${PRICE.creditLimit.toLocaleString('de-CH')} gehen).`;
   if (db.prepare('SELECT COUNT(*) AS n FROM roster WHERE user_id = ?').get(userId).n >= RULES.maxRoster) return `Maximal ${RULES.maxRoster} Spieler im Kader.`;
   if (pos === 'G') {
     const g = db.prepare(`SELECT COUNT(*) AS n FROM roster r JOIN players x ON x.id = r.player_id WHERE r.user_id = ? AND x.pos = 'G'`).get(userId).n;

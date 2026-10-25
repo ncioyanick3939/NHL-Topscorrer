@@ -649,3 +649,17 @@ test('app files are loaded with their version in the URL, so phones never keep o
   assert.equal((await fetch(`${base}/app.js?v=old`)).headers.get('cache-control'), 'no-store');
   server.close();
 });
+
+test('credit: buying and bidding may take the account down to -2,000,000, not further', async () => {
+  const { db } = await import('./db.js');
+  const game = await import('./game.js');
+  const { cannotReceive } = await import('./auction.js');
+  db.prepare("INSERT INTO users (name, salt, pw_hash, balance) VALUES ('kredit','s','x',500000)").run();
+  const u = db.prepare("SELECT id FROM users WHERE name='kredit'").get().id;
+  assert.equal(cannotReceive(u, 'F', 2_500_000), null);           // ends at -2,000,000: allowed
+  assert.match(cannotReceive(u, 'F', 2_500_001), /Zu wenig Guthaben/); // one more: refused
+  db.prepare("INSERT INTO players (id, team, first, last, pos, price, prev_price) VALUES (8496001,'ZZK','Kre','Dit','F',1800000,1800000)").run();
+  db.prepare('INSERT OR REPLACE INTO market_listings (player_id, listed_at, expires_at) VALUES (8496001, ?, ?)').run(new Date().toISOString(), new Date(Date.now() + 3_600_000).toISOString());
+  game.buy(u, 8496001);
+  assert.equal(game.myTeam(u).balance, 500000 - 1800000); // -1,300,000
+});
