@@ -636,3 +636,8 @@ main.static>*{animation:none}
 .log li.miss{opacity:.6}.log li.miss b:first-child{color:var(--down)}
 .grid4.g span{display:block;line-height:1.25}
 .tile b.down{color:var(--down)}
+
+/* NHL games: jump to today */
+#nextgame{scroll-margin-top:64px}
+.dayhead b{color:var(--ink)}
+.dayhead.today{color:var(--yellow)}.dayhead.today b{color:var(--yellow)}
